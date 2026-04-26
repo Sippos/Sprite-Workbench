@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
+import type { AppSettings, AssetWorkbenchMode, AssetWorkbenchProject, SinglePngAnchor, SinglePngExportSettings, SinglePngFitMode } from "./app/project/ProjectTypes";
+import { loadProject, loadSettings, saveProject, saveSettings } from "./app/project/ProjectStore";
 
 type Bounds = {
   x: number;
@@ -30,6 +32,8 @@ type AnimationRow = {
 type BrushMode = "erase" | "restore" | "pick";
 type NormalizeMode = "auto" | "locked-row";
 
+type SinglePngPreset = { label: string; width: number; height: number };
+
 type PointerPreview = {
   visible: boolean;
   x: number;
@@ -38,17 +42,61 @@ type PointerPreview = {
   sourceY: number;
 };
 
-const FRAME_SIZES = [32, 48, 64, 96, 128];
+const FRAME_SIZES = [32, 48, 64, 96, 128, 192];
 const DEFAULT_COLUMNS = 6;
+
+const SINGLE_PNG_PRESETS: SinglePngPreset[] = [
+  { label: "64×64 icon", width: 64, height: 64 },
+  { label: "96×96 icon", width: 96, height: 96 },
+  { label: "128×128 icon", width: 128, height: 128 },
+  { label: "320×80 button", width: 320, height: 80 },
+  { label: "420×96 button", width: 420, height: 96 },
+  { label: "512×320 panel", width: 512, height: 320 },
+  { label: "900×620 large panel", width: 900, height: 620 },
+];
+
+const DEFAULT_SINGLE_PNG: SinglePngExportSettings = {
+  width: 420,
+  height: 96,
+  preset: "420×96 button",
+  fitMode: "contain",
+  scale: 1,
+  xOffset: 0,
+  yOffset: 0,
+  anchor: "center",
+  background: "transparent",
+  backgroundColor: "#ffffff",
+};
 
 function createId() {
   return crypto.randomUUID();
+}
+
+function colorToHex(color: [number, number, number] | null) {
+  if (!color) return null;
+  return `#${color.map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function hexToColor(hex: string | null): [number, number, number] | null {
+  if (!hex || !/^#[0-9a-fA-F]{6}$/.test(hex)) return null;
+  return [
+    Number.parseInt(hex.slice(1, 3), 16),
+    Number.parseInt(hex.slice(3, 5), 16),
+    Number.parseInt(hex.slice(5, 7), 16),
+  ];
 }
 
 function App() {
   const [assetId, setAssetId] = useState("zarathustra");
   const [frameSize, setFrameSize] = useState(64);
   const [columns, setColumns] = useState(DEFAULT_COLUMNS);
+  const [appMode, setAppMode] = useState<AssetWorkbenchMode>("spritesheet");
+  const [projectName, setProjectName] = useState("Zarathustra Asset Workbench");
+  const [projectCreatedAt, setProjectCreatedAt] = useState(() => new Date().toISOString());
+  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState("No project saved yet.");
+  const [settings] = useState<AppSettings>(() => loadSettings());
+  const [singlePng, setSinglePng] = useState<SinglePngExportSettings>(DEFAULT_SINGLE_PNG);
   const [normalizeMode, setNormalizeMode] = useState<NormalizeMode>("locked-row");
 
   const [rows, setRows] = useState<AnimationRow[]>([
@@ -79,12 +127,12 @@ function App() {
   const [showGuides, setShowGuides] = useState(true);
   const [previewTick, setPreviewTick] = useState(0);
   const [pointerPreview, setPointerPreview] = useState<PointerPreview | null>(null);
-
   const editorCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const framePreviewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const animationPreviewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const rowAlignmentCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const sheetPreviewCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const singlePngPreviewCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const isPaintingRef = useRef(false);
 
@@ -100,6 +148,14 @@ function App() {
 
     return selectedRow?.frames[0] ?? null;
   }, [rows, selectedFrameId, selectedRow]);
+
+  useEffect(() => {
+    void hydrateSavedProject();
+  }, []);
+
+  useEffect(() => {
+    saveSettings(settings);
+  }, [settings]);
 
   useEffect(() => {
     setFeetX(Math.floor(frameSize / 2));
@@ -133,7 +189,167 @@ function App() {
     showGuides,
     previewTick,
     pointerPreview,
+    singlePng,
+    appMode,
   ]);
+
+  function updateSinglePng(patch: Partial<SinglePngExportSettings>) {
+    setSinglePng((current) => ({ ...current, ...patch }));
+  }
+
+  function applySinglePngPreset(label: string) {
+    if (label === "Custom") {
+      updateSinglePng({ preset: "Custom" });
+      return;
+    }
+
+    const preset = SINGLE_PNG_PRESETS.find((item) => item.label === label);
+    if (!preset) return;
+
+    updateSinglePng({
+      preset: preset.label,
+      width: preset.width,
+      height: preset.height,
+    });
+  }
+
+  function buildProjectSnapshot(): AssetWorkbenchProject {
+    const now = new Date().toISOString();
+
+    return {
+      version: 1,
+      name: projectName,
+      createdAt: projectCreatedAt,
+      updatedAt: now,
+      mode: appMode,
+      assetId,
+      canvas: {
+        frameWidth: frameSize,
+        frameHeight: frameSize,
+        columns,
+        rows: rows.length,
+        padding: 0,
+        background: "transparent",
+      },
+      singlePng,
+      backgroundRemoval: {
+        pickedColor: colorToHex(pickedColor),
+        tolerance: colorTolerance,
+        softness: settings.featherPx,
+        edgeCleanup: haloThreshold,
+        removeWhiteFringe: true,
+        removeWhiteThreshold,
+        checkerBrightness,
+        checkerNeutrality,
+        haloThreshold,
+      },
+      spritesheet: {
+        normalizeMode,
+        globalScale,
+        feetX,
+        feetY,
+        collisionRadius,
+        collisionOffsetY,
+        showGuides,
+        rows: rows.map((row) => ({
+          id: row.id,
+          name: row.name,
+          frameRate: row.frameRate,
+          lockedCrop: row.lockedCrop,
+          frames: row.frames.map((frame) => ({
+            id: frame.id,
+            name: frame.fileName,
+            imageDataUrl: frame.originalCanvas.toDataURL("image/png"),
+            cleanedImageDataUrl: frame.editCanvas.toDataURL("image/png"),
+            xOffset: frame.offsetX,
+            yOffset: frame.offsetY,
+            scale: frame.scale,
+            rotation: 0,
+            visible: true,
+          })),
+        })),
+      },
+      exports: {},
+    };
+  }
+
+  function handleSaveProject() {
+    const project = buildProjectSnapshot();
+    saveProject(project);
+    setLastSavedAt(project.updatedAt);
+    setSaveStatus(`Saved locally at ${new Date(project.updatedAt).toLocaleTimeString()}.`);
+  }
+
+  async function hydrateSavedProject() {
+    const project = loadProject();
+    if (!project) return;
+
+    try {
+      await applyProject(project);
+      setSaveStatus(`Loaded local project: ${project.name}.`);
+    } catch (error) {
+      console.error(error);
+      setSaveStatus("Could not load the saved local project.");
+    }
+  }
+
+  async function applyProject(project: AssetWorkbenchProject) {
+    const loadedRows = await Promise.all(
+      project.spritesheet.rows.map(async (row) => ({
+        id: row.id,
+        name: row.name,
+        frameRate: row.frameRate,
+        lockedCrop: row.lockedCrop,
+        frames: await Promise.all(row.frames.map(savedFrameToSpriteFrame)),
+      }))
+    );
+
+    setProjectName(project.name);
+    setProjectCreatedAt(project.createdAt);
+    setLastSavedAt(project.updatedAt);
+    setAppMode(project.mode);
+    setAssetId(project.assetId);
+    setFrameSize(project.canvas.frameWidth);
+    setColumns(project.canvas.columns);
+    setSinglePng(project.singlePng ?? DEFAULT_SINGLE_PNG);
+    setNormalizeMode(project.spritesheet.normalizeMode);
+    setGlobalScale(project.spritesheet.globalScale);
+    setFeetX(project.spritesheet.feetX);
+    setFeetY(project.spritesheet.feetY);
+    setCollisionRadius(project.spritesheet.collisionRadius);
+    setCollisionOffsetY(project.spritesheet.collisionOffsetY);
+    setShowGuides(project.spritesheet.showGuides);
+    setPickedColor(hexToColor(project.backgroundRemoval.pickedColor));
+    setColorTolerance(project.backgroundRemoval.tolerance);
+    setRemoveWhiteThreshold(project.backgroundRemoval.removeWhiteThreshold);
+    setCheckerBrightness(project.backgroundRemoval.checkerBrightness);
+    setCheckerNeutrality(project.backgroundRemoval.checkerNeutrality);
+    setHaloThreshold(project.backgroundRemoval.haloThreshold);
+    setRows(loadedRows.length > 0 ? loadedRows : [{ id: createId(), name: "idle", frameRate: 6, frames: [], lockedCrop: null }]);
+    setSelectedRowId(loadedRows[0]?.id ?? null);
+    setSelectedFrameId(loadedRows[0]?.frames[0]?.id ?? null);
+  }
+
+  function exportProjectJson() {
+    const project = buildProjectSnapshot();
+    const blob = new Blob([JSON.stringify(project, null, 2)], { type: "application/json" });
+    downloadBlob(blob, `${project.name.replace(/[^a-z0-9_-]+/gi, "-").toLowerCase()}.assetworkbench`);
+  }
+
+  async function importProjectJson(files: FileList | null) {
+    const file = files?.[0];
+    if (!file) return;
+
+    try {
+      const project = JSON.parse(await file.text()) as AssetWorkbenchProject;
+      await applyProject(project);
+      saveProject(project);
+      setSaveStatus(`Imported ${file.name} and saved it locally.`);
+    } catch (error) {
+      console.error(error);
+      setSaveStatus("Could not import that .assetworkbench file.");
+    }
+  }
 
   async function addFramesToRow(rowId: string, files: FileList | File[]) {
     const newFrames = await Promise.all(Array.from(files).map(fileToSpriteFrame));
@@ -444,12 +660,43 @@ function App() {
     );
   }
 
+  function drawSinglePngPreview() {
+    const canvas = singlePngPreviewCanvasRef.current;
+    if (!canvas || !selectedFrame) return;
+
+    const previewScale = Math.min(1, 760 / singlePng.width, 460 / singlePng.height);
+    const scale = Math.max(0.15, previewScale);
+
+    canvas.width = Math.max(1, Math.round(singlePng.width * scale));
+    canvas.height = Math.max(1, Math.round(singlePng.height * scale));
+
+    const context = canvas.getContext("2d");
+    if (!context) return;
+
+    context.imageSmoothingEnabled = false;
+    drawCheckerboard(context, canvas.width, canvas.height, 16);
+
+    const exportCanvas = createSinglePngCanvas(selectedFrame, singlePng);
+    context.drawImage(exportCanvas, 0, 0, canvas.width, canvas.height);
+  }
+
+  function exportSinglePng() {
+    if (!selectedFrame) return;
+
+    const canvas = createSinglePngCanvas(selectedFrame, singlePng);
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      downloadBlob(blob, `${assetId}_${selectedFrame.fileName.replace(/\.[^.]+$/, "")}_${singlePng.width}x${singlePng.height}.png`);
+    }, "image/png");
+  }
+
   function drawAll() {
     drawEditorCanvas();
     drawSelectedFramePreview();
     drawAnimationPreview();
     drawRowAlignmentPreview();
     drawSheetPreview();
+    drawSinglePngPreview();
   }
 
   function drawEditorCanvas() {
@@ -734,11 +981,11 @@ ${animationCode}`;
     <main className="app">
       <header className="hero">
         <div>
-          <p className="eyebrow">Sprite Sheet Builder</p>
-          <h1>Stable frame builder with locked crops</h1>
+          <p className="eyebrow">Zarathustra Asset Workbench</p>
+          <h1>Clean PNG and spritesheet export studio</h1>
           <p className="subtitle">
-            Clean backgrounds without changing sprite dimensions. Lock a row crop
-            once, then erase, restore, align, and export consistent Phaser sheets.
+            Prepare generated sprites, spell effects, UI panels, icons, and tiles.
+            Clean backgrounds, align frames, export exact PNG sizes, and keep a saved local project state.
           </p>
         </div>
       </header>
@@ -754,6 +1001,51 @@ ${animationCode}`;
               onChange={(event) => setAssetId(event.target.value)}
             />
           </label>
+
+          <label>
+            Project name
+            <input
+              value={projectName}
+              onChange={(event) => setProjectName(event.target.value)}
+            />
+          </label>
+
+          <div className="modeSwitch" role="tablist" aria-label="Workbench mode">
+            <button
+              className={appMode === "single-png" ? "activeButton" : ""}
+              onClick={() => setAppMode("single-png")}
+              type="button"
+            >
+              Single PNG Export
+            </button>
+            <button
+              className={appMode === "spritesheet" ? "activeButton" : ""}
+              onClick={() => setAppMode("spritesheet")}
+              type="button"
+            >
+              Spritesheet Export
+            </button>
+          </div>
+
+          <div className="buttonGrid three">
+            <button type="button" onClick={handleSaveProject}>Save local</button>
+            <button type="button" onClick={exportProjectJson}>Export file</button>
+            <label className="uploadMini importProjectButton">
+              Import file
+              <input
+                type="file"
+                accept=".assetworkbench,application/json"
+                onChange={(event) => {
+                  void importProjectJson(event.target.files);
+                  event.currentTarget.value = "";
+                }}
+              />
+            </label>
+          </div>
+
+          <p className="info">
+            {saveStatus}{lastSavedAt ? ` Last save: ${new Date(lastSavedAt).toLocaleString()}.` : ""}
+          </p>
 
           <div className="grid2">
             <label>
@@ -787,6 +1079,128 @@ ${animationCode}`;
           <p className="info">
             Output: {totalSheetWidth}×{totalSheetHeight}px
           </p>
+
+          {appMode === "single-png" && (
+            <>
+              <hr />
+              <h2>Single PNG export</h2>
+
+              <label>
+                Preset
+                <select
+                  value={singlePng.preset}
+                  onChange={(event) => applySinglePngPreset(event.target.value)}
+                >
+                  {SINGLE_PNG_PRESETS.map((preset) => (
+                    <option key={preset.label} value={preset.label}>{preset.label}</option>
+                  ))}
+                  <option value="Custom">Custom</option>
+                </select>
+              </label>
+
+              <div className="grid2">
+                <label>
+                  Output width
+                  <input
+                    type="number"
+                    min={1}
+                    value={singlePng.width}
+                    onChange={(event) => updateSinglePng({ width: Math.max(1, Number(event.target.value)), preset: "Custom" })}
+                  />
+                </label>
+
+                <label>
+                  Output height
+                  <input
+                    type="number"
+                    min={1}
+                    value={singlePng.height}
+                    onChange={(event) => updateSinglePng({ height: Math.max(1, Number(event.target.value)), preset: "Custom" })}
+                  />
+                </label>
+              </div>
+
+              <div className="grid2">
+                <label>
+                  Fit mode
+                  <select
+                    value={singlePng.fitMode}
+                    onChange={(event) => updateSinglePng({ fitMode: event.target.value as SinglePngFitMode })}
+                  >
+                    <option value="contain">Contain</option>
+                    <option value="cover">Cover</option>
+                    <option value="original-size">Original size</option>
+                    <option value="custom-scale">Custom scale</option>
+                  </select>
+                </label>
+
+                <label>
+                  Anchor
+                  <select
+                    value={singlePng.anchor}
+                    onChange={(event) => updateSinglePng({ anchor: event.target.value as SinglePngAnchor })}
+                  >
+                    <option value="center">Center</option>
+                    <option value="top-left">Top left</option>
+                    <option value="bottom-center">Bottom center</option>
+                    <option value="custom">Custom</option>
+                  </select>
+                </label>
+              </div>
+
+              <label>
+                Custom scale: {singlePng.scale.toFixed(2)}
+                <input
+                  type="range"
+                  min="0.05"
+                  max="4"
+                  step="0.01"
+                  value={singlePng.scale}
+                  onChange={(event) => updateSinglePng({ scale: Number(event.target.value), fitMode: "custom-scale" })}
+                />
+              </label>
+
+              <div className="grid2">
+                <label>
+                  X offset
+                  <input
+                    type="number"
+                    value={singlePng.xOffset}
+                    onChange={(event) => updateSinglePng({ xOffset: Number(event.target.value) })}
+                  />
+                </label>
+                <label>
+                  Y offset
+                  <input
+                    type="number"
+                    value={singlePng.yOffset}
+                    onChange={(event) => updateSinglePng({ yOffset: Number(event.target.value) })}
+                  />
+                </label>
+              </div>
+
+              <div className="grid2">
+                <label>
+                  Background
+                  <select
+                    value={singlePng.background}
+                    onChange={(event) => updateSinglePng({ background: event.target.value as "transparent" | "solid" })}
+                  >
+                    <option value="transparent">Transparent</option>
+                    <option value="solid">Solid color</option>
+                  </select>
+                </label>
+                <label>
+                  Solid color
+                  <input
+                    type="color"
+                    value={singlePng.backgroundColor}
+                    onChange={(event) => updateSinglePng({ backgroundColor: event.target.value })}
+                  />
+                </label>
+              </div>
+            </>
+          )}
 
           <label>
             Normalize mode
@@ -1270,6 +1684,12 @@ ${animationCode}`;
 
           <div className="buttonStack">
             <button
+              onClick={exportSinglePng}
+              disabled={!selectedFrame}
+            >
+              Download single PNG
+            </button>
+            <button
               onClick={exportSheet}
               disabled={rows.every((row) => row.frames.length === 0)}
             >
@@ -1293,11 +1713,7 @@ ${animationCode}`;
         <section className="workspace">
           <div className="panel">
             <h2>Frame cleanup editor</h2>
-            <p className="hint">
-              The editor changes pixels, but locked row crop keeps exported sprite
-              dimensions stable.
-            </p>
-
+            <p className="hint">Clean or restore pixels here. The same cleaned frame can export as a fixed-size PNG or a spritesheet cell.</p>
             <div className="canvasWrap editorWrap">
               {selectedFrame ? (
                 <div className="editorCanvasShell">
@@ -1328,6 +1744,22 @@ ${animationCode}`;
               )}
             </div>
           </div>
+
+          {appMode === "single-png" && (
+            <div className="panel">
+              <h2>Single PNG export preview</h2>
+              <p className="hint">
+                Fixed export canvas: {singlePng.width}×{singlePng.height}px. Checkerboard is preview only unless a solid background is selected.
+              </p>
+              <div className="canvasWrap sheetWrap">
+                {selectedFrame ? (
+                  <canvas ref={singlePngPreviewCanvasRef} />
+                ) : (
+                  <div className="empty">Select a cleaned frame to preview a single PNG export.</div>
+                )}
+              </div>
+            </div>
+          )}
 
           <div className="previewGrid">
             <div className="panel">
@@ -1558,6 +1990,107 @@ async function fileToSpriteFrame(file: File): Promise<SpriteFrame> {
     offsetY: 0,
   };
 }
+async function savedFrameToSpriteFrame(frame: AssetWorkbenchProject["spritesheet"]["rows"][number]["frames"][number]): Promise<SpriteFrame> {
+  const image = await loadImageFromDataUrl(frame.imageDataUrl);
+
+  const originalCanvas = document.createElement("canvas");
+  originalCanvas.width = image.naturalWidth;
+  originalCanvas.height = image.naturalHeight;
+
+  const originalContext = originalCanvas.getContext("2d");
+  if (!originalContext) throw new Error("Could not create restored original canvas.");
+  originalContext.clearRect(0, 0, originalCanvas.width, originalCanvas.height);
+  originalContext.drawImage(image, 0, 0);
+
+  const cleanedImage = await loadImageFromDataUrl(frame.cleanedImageDataUrl ?? frame.imageDataUrl);
+  const editCanvas = document.createElement("canvas");
+  editCanvas.width = cleanedImage.naturalWidth;
+  editCanvas.height = cleanedImage.naturalHeight;
+
+  const editContext = editCanvas.getContext("2d");
+  if (!editContext) throw new Error("Could not create restored edit canvas.");
+  editContext.clearRect(0, 0, editCanvas.width, editCanvas.height);
+  editContext.drawImage(cleanedImage, 0, 0);
+
+  return {
+    id: frame.id,
+    fileName: frame.name,
+    image,
+    originalCanvas,
+    editCanvas,
+    scale: frame.scale,
+    offsetX: frame.xOffset,
+    offsetY: frame.yOffset,
+  };
+}
+
+function loadImageFromDataUrl(dataUrl: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Could not load stored image."));
+    image.src = dataUrl;
+  });
+}
+
+function createSinglePngCanvas(frame: SpriteFrame, options: SinglePngExportSettings) {
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(options.width));
+  canvas.height = Math.max(1, Math.round(options.height));
+
+  const context = canvas.getContext("2d");
+  if (!context) return canvas;
+
+  context.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (options.background === "solid") {
+    context.fillStyle = options.backgroundColor;
+    context.fillRect(0, 0, canvas.width, canvas.height);
+  }
+
+  context.imageSmoothingEnabled = false;
+
+  const bounds = findVisibleBounds(frame.editCanvas);
+  const containScale = Math.min(canvas.width / bounds.width, canvas.height / bounds.height);
+  const coverScale = Math.max(canvas.width / bounds.width, canvas.height / bounds.height);
+
+  let scale = 1;
+  if (options.fitMode === "contain") scale = containScale;
+  if (options.fitMode === "cover") scale = coverScale;
+  if (options.fitMode === "original-size") scale = 1;
+  if (options.fitMode === "custom-scale") scale = options.scale;
+
+  const drawWidth = bounds.width * scale;
+  const drawHeight = bounds.height * scale;
+
+  let x = canvas.width / 2 - drawWidth / 2 + options.xOffset;
+  let y = canvas.height / 2 - drawHeight / 2 + options.yOffset;
+
+  if (options.anchor === "top-left") {
+    x = options.xOffset;
+    y = options.yOffset;
+  }
+
+  if (options.anchor === "bottom-center") {
+    x = canvas.width / 2 - drawWidth / 2 + options.xOffset;
+    y = canvas.height - drawHeight + options.yOffset;
+  }
+
+  context.drawImage(
+    frame.editCanvas,
+    bounds.x,
+    bounds.y,
+    bounds.width,
+    bounds.height,
+    x,
+    y,
+    drawWidth,
+    drawHeight
+  );
+
+  return canvas;
+}
+
 
 function loadImage(file: File): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {

@@ -421,3 +421,25 @@ canvas {
     grid-template-columns: 1fr;
   }
 }
+.modeSwitch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55rem;
+  margin: 0.25rem 0 0.85rem;
+}
+
+.modeSwitch button {
+  min-height: 52px;
+}
+
+.importProjectButton {
+  min-height: auto;
+  padding: 0.7rem 0.85rem;
+  font-weight: 800;
+  border-style: solid;
+}
+
+input[type="color"] {
+  min-height: 44px;
+  padding: 0.2rem;
+}
