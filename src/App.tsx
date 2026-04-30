@@ -29,7 +29,20 @@ type AnimationRow = {
   lockedCrop: Bounds | null;
 };
 
-type BrushMode = "erase" | "restore" | "pick";
+type BrushMode = "erase" | "restore" | "pick" | "pan";
+
+type HistoryChange = {
+  frameId: string;
+  beforeDataUrl: string;
+  afterDataUrl: string;
+};
+
+type HistoryEntry = {
+  id: string;
+  label: string;
+  createdAt: string;
+  changes: HistoryChange[];
+};
 type NormalizeMode = "auto" | "locked-row";
 
 type SinglePngPreset = { label: string; width: number; height: number };
@@ -42,8 +55,16 @@ type PointerPreview = {
   sourceY: number;
 };
 
+type ImportCandidate = {
+  id: string;
+  file: File;
+  url: string;
+  selected: boolean;
+};
+
 const FRAME_SIZES = [32, 48, 64, 96, 128, 192];
 const DEFAULT_COLUMNS = 6;
+const EDITOR_ZOOM_LEVELS = [0.25, 0.5, 1, 2, 4, 8];
 
 const SINGLE_PNG_PRESETS: SinglePngPreset[] = [
   { label: "64×64 icon", width: 64, height: 64 },
@@ -68,6 +89,15 @@ const DEFAULT_SINGLE_PNG: SinglePngExportSettings = {
   backgroundColor: "#ffffff",
 };
 
+function getFrameGuideDefaults(size: number) {
+  return {
+    feetX: Math.floor(size / 2),
+    feetY: Math.floor(size * 0.82),
+    collisionRadius: Math.max(6, Math.floor(size * 0.19)),
+    collisionOffsetY: Math.floor(size * 0.15),
+  };
+}
+
 function createId() {
   return crypto.randomUUID();
 }
@@ -84,6 +114,41 @@ function hexToColor(hex: string | null): [number, number, number] | null {
     Number.parseInt(hex.slice(3, 5), 16),
     Number.parseInt(hex.slice(5, 7), 16),
   ];
+}
+
+function rgbToHex(red: number, green: number, blue: number) {
+  return "#" + [red, green, blue]
+    .map((value) => Math.round(value).toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function sampleAverageColor(
+  context: CanvasRenderingContext2D,
+  centerX: number,
+  centerY: number,
+  sampleSize: number,
+  width: number,
+  height: number
+): [number, number, number] {
+  const radius = Math.floor(sampleSize / 2);
+  let red = 0;
+  let green = 0;
+  let blue = 0;
+  let count = 0;
+
+  for (let y = centerY - radius; y <= centerY + radius; y++) {
+    for (let x = centerX - radius; x <= centerX + radius; x++) {
+      if (x < 0 || y < 0 || x >= width || y >= height) continue;
+      const pixel = context.getImageData(x, y, 1, 1).data;
+      red += pixel[0];
+      green += pixel[1];
+      blue += pixel[2];
+      count += 1;
+    }
+  }
+
+  if (count === 0) return [0, 0, 0];
+  return [Math.round(red / count), Math.round(green / count), Math.round(blue / count)];
 }
 
 function App() {
@@ -123,10 +188,17 @@ function App() {
 
   const [brushMode, setBrushMode] = useState<BrushMode>("erase");
   const [brushSize, setBrushSize] = useState(18);
+  const [editorZoom, setEditorZoom] = useState(1);
+  const [showLoupe, setShowLoupe] = useState(true);
+  const [undoStack, setUndoStack] = useState<HistoryEntry[]>([]);
+  const [redoStack, setRedoStack] = useState<HistoryEntry[]>([]);
+  const [importCandidates, setImportCandidates] = useState<ImportCandidate[]>([]);
+  const [activeImportId, setActiveImportId] = useState<string | null>(null);
 
   const [showGuides, setShowGuides] = useState(true);
   const [previewTick, setPreviewTick] = useState(0);
   const [pointerPreview, setPointerPreview] = useState<PointerPreview | null>(null);
+  const editorScrollRef = useRef<HTMLDivElement | null>(null);
   const editorCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const framePreviewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const animationPreviewCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -135,6 +207,9 @@ function App() {
   const singlePngPreviewCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const isPaintingRef = useRef(false);
+  const activePaintHistoryRef = useRef<{ frameId: string; beforeDataUrl: string } | null>(null);
+  const isPanningRef = useRef(false);
+  const panStartRef = useRef({ pointerX: 0, pointerY: 0, scrollLeft: 0, scrollTop: 0 });
 
   const selectedRow = useMemo(() => {
     return rows.find((row) => row.id === selectedRowId) ?? rows[0] ?? null;
@@ -156,13 +231,6 @@ function App() {
   useEffect(() => {
     saveSettings(settings);
   }, [settings]);
-
-  useEffect(() => {
-    setFeetX(Math.floor(frameSize / 2));
-    setFeetY(Math.floor(frameSize * 0.82));
-    setCollisionRadius(Math.max(6, Math.floor(frameSize * 0.19)));
-    setCollisionOffsetY(Math.floor(frameSize * 0.15));
-  }, [frameSize]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -189,12 +257,162 @@ function App() {
     showGuides,
     previewTick,
     pointerPreview,
+    editorZoom,
     singlePng,
     appMode,
   ]);
 
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      const isTyping = target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.tagName === "SELECT";
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        if (event.shiftKey) {
+          redo();
+        } else {
+          undo();
+        }
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        handleSaveProject();
+      }
+
+      if (!isTyping && event.key === " ") {
+        setBrushMode("pan");
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [undoStack, redoStack, rows, selectedFrame, brushMode]);
+
   function updateSinglePng(patch: Partial<SinglePngExportSettings>) {
     setSinglePng((current) => ({ ...current, ...patch }));
+  }
+
+  function findFrameById(frameId: string) {
+    for (const row of rows) {
+      const frame = row.frames.find((item) => item.id === frameId);
+      if (frame) return frame;
+    }
+
+    return null;
+  }
+
+  function snapshotFrames(frames: SpriteFrame[]) {
+    return frames.map((frame) => ({
+      frameId: frame.id,
+      beforeDataUrl: frame.editCanvas.toDataURL("image/png"),
+    }));
+  }
+
+  function pushHistory(label: string, changes: HistoryChange[]) {
+    if (changes.length === 0) return;
+
+    setUndoStack((current) => [
+      ...current.slice(-49),
+      {
+        id: createId(),
+        label,
+        createdAt: new Date().toISOString(),
+        changes,
+      },
+    ]);
+    setRedoStack([]);
+  }
+
+  async function restoreFrameDataUrl(frameId: string, dataUrl: string) {
+    const frame = findFrameById(frameId);
+    if (!frame) return;
+
+    const image = await loadImageFromDataUrl(dataUrl);
+    const context = frame.editCanvas.getContext("2d");
+    if (!context) return;
+
+    context.clearRect(0, 0, frame.editCanvas.width, frame.editCanvas.height);
+    context.drawImage(image, 0, 0, frame.editCanvas.width, frame.editCanvas.height);
+  }
+
+  async function restoreHistoryEntry(entry: HistoryEntry, direction: "undo" | "redo") {
+    for (const change of entry.changes) {
+      await restoreFrameDataUrl(
+        change.frameId,
+        direction === "undo" ? change.beforeDataUrl : change.afterDataUrl
+      );
+    }
+
+    forceRerenderRows();
+  }
+
+  function undo() {
+    const entry = undoStack[undoStack.length - 1];
+    if (!entry) return;
+
+    void restoreHistoryEntry(entry, "undo");
+    setUndoStack((current) => current.slice(0, -1));
+    setRedoStack((current) => [...current, entry]);
+  }
+
+  function redo() {
+    const entry = redoStack[redoStack.length - 1];
+    if (!entry) return;
+
+    void restoreHistoryEntry(entry, "redo");
+    setRedoStack((current) => current.slice(0, -1));
+    setUndoStack((current) => [...current, entry]);
+  }
+
+  function commitCanvasHistory(label: string, before: { frameId: string; beforeDataUrl: string }[]) {
+    const changes = before
+      .map((snapshot) => {
+        const frame = findFrameById(snapshot.frameId);
+        if (!frame) return null;
+
+        return {
+          frameId: snapshot.frameId,
+          beforeDataUrl: snapshot.beforeDataUrl,
+          afterDataUrl: frame.editCanvas.toDataURL("image/png"),
+        };
+      })
+      .filter((change): change is HistoryChange => change !== null)
+      .filter((change) => change.beforeDataUrl !== change.afterDataUrl);
+
+    pushHistory(label, changes);
+  }
+
+  function createNewProject() {
+    const idleRow: AnimationRow = { id: createId(), name: "idle", frameRate: 6, frames: [], lockedCrop: null };
+    const walkRow: AnimationRow = { id: createId(), name: "walk", frameRate: 10, frames: [], lockedCrop: null };
+    const guideDefaults = getFrameGuideDefaults(64);
+
+    setProjectName("Zarathustra Asset Workbench");
+    setProjectCreatedAt(new Date().toISOString());
+    setLastSavedAt(null);
+    setSaveStatus("New unsaved project.");
+    setRows([idleRow, walkRow]);
+    setSelectedRowId(idleRow.id);
+    setSelectedFrameId(null);
+    setFrameSize(64);
+    setFeetX(guideDefaults.feetX);
+    setFeetY(guideDefaults.feetY);
+    setCollisionRadius(guideDefaults.collisionRadius);
+    setCollisionOffsetY(guideDefaults.collisionOffsetY);
+    setUndoStack([]);
+    setRedoStack([]);
+  }
+
+  function stepEditorZoom(direction: -1 | 1) {
+    const currentIndex = EDITOR_ZOOM_LEVELS.findIndex((value) => value === editorZoom);
+    const fallbackIndex = EDITOR_ZOOM_LEVELS.reduce((best, value, index) => {
+      return Math.abs(value - editorZoom) < Math.abs(EDITOR_ZOOM_LEVELS[best] - editorZoom) ? index : best;
+    }, 0);
+    const index = currentIndex >= 0 ? currentIndex : fallbackIndex;
+    const next = Math.min(EDITOR_ZOOM_LEVELS.length - 1, Math.max(0, index + direction));
+    setEditorZoom(EDITOR_ZOOM_LEVELS[next]);
   }
 
   function applySinglePngPreset(label: string) {
@@ -371,6 +589,76 @@ function App() {
     }
   }
 
+  function stageImportFiles(files: FileList | File[]) {
+    const imageFiles = Array.from(files).filter((file) =>
+      file.type.startsWith("image/") || /\.(png|jpe?g|webp|gif|bmp)$/i.test(file.name)
+    );
+
+    if (imageFiles.length === 0) {
+      setSaveStatus("No supported image files were selected.");
+      return;
+    }
+
+    setImportCandidates((current) => {
+      for (const candidate of current) URL.revokeObjectURL(candidate.url);
+
+      return imageFiles.map((file, index) => ({
+        id: createId(),
+        file,
+        url: URL.createObjectURL(file),
+        selected: index === 0,
+      }));
+    });
+
+    setActiveImportId(null);
+    setSaveStatus(`Previewing ${imageFiles.length} image${imageFiles.length === 1 ? "" : "s"}. Select the frames you want, then import them.`);
+  }
+
+  function handleFrameSizeChange(size: number) {
+    const guideDefaults = getFrameGuideDefaults(size);
+
+    setFrameSize(size);
+    setFeetX(guideDefaults.feetX);
+    setFeetY(guideDefaults.feetY);
+    setCollisionRadius(guideDefaults.collisionRadius);
+    setCollisionOffsetY(guideDefaults.collisionOffsetY);
+  }
+
+  function clearImportCandidates() {
+    setImportCandidates((current) => {
+      for (const candidate of current) URL.revokeObjectURL(candidate.url);
+      return [];
+    });
+    setActiveImportId(null);
+  }
+
+  function toggleImportCandidate(candidateId: string) {
+    setImportCandidates((current) =>
+      current.map((candidate) =>
+        candidate.id === candidateId ? { ...candidate, selected: !candidate.selected } : candidate
+      )
+    );
+  }
+
+  function setAllImportCandidates(selected: boolean) {
+    setImportCandidates((current) => current.map((candidate) => ({ ...candidate, selected })));
+  }
+
+  async function importSelectedCandidates(rowId: string) {
+    const selectedFiles = importCandidates
+      .filter((candidate) => candidate.selected)
+      .map((candidate) => candidate.file);
+
+    if (selectedFiles.length === 0) {
+      setSaveStatus("Select at least one preview image before importing.");
+      return;
+    }
+
+    await addFramesToRow(rowId, selectedFiles);
+    setSaveStatus(`Imported ${selectedFiles.length} image${selectedFiles.length === 1 ? "" : "s"} into the selected row.`);
+    clearImportCandidates();
+  }
+
   function addRow() {
     const newRow: AnimationRow = {
       id: createId(),
@@ -464,49 +752,60 @@ function App() {
 
   function applyRemoveNearWhiteToSelected() {
     if (!selectedFrame) return;
+    const before = snapshotFrames([selectedFrame]);
     removeNearWhite(selectedFrame.editCanvas, removeWhiteThreshold);
+    commitCanvasHistory("Remove white from selected frame", before);
     forceRerenderRows();
   }
 
   function applyRemoveNearWhiteToRow() {
     if (!selectedRow) return;
+    const before = snapshotFrames(selectedRow.frames);
 
     for (const frame of selectedRow.frames) {
       removeNearWhite(frame.editCanvas, removeWhiteThreshold);
     }
 
+    commitCanvasHistory("Remove white from row", before);
     forceRerenderRows();
   }
 
   function applyPickedColorToSelected() {
     if (!selectedFrame || !pickedColor) return;
+    const before = snapshotFrames([selectedFrame]);
     removeColor(selectedFrame.editCanvas, pickedColor, colorTolerance);
+    commitCanvasHistory("Remove picked color from selected frame", before);
     forceRerenderRows();
   }
 
   function applyPickedColorToRow() {
     if (!selectedRow || !pickedColor) return;
+    const before = snapshotFrames(selectedRow.frames);
 
     for (const frame of selectedRow.frames) {
       removeColor(frame.editCanvas, pickedColor, colorTolerance);
     }
 
+    commitCanvasHistory("Remove picked color from row", before);
     forceRerenderRows();
   }
 
   function applyCheckerBgToSelected() {
     if (!selectedFrame) return;
+    const before = snapshotFrames([selectedFrame]);
 
     removeConnectedLightBackground(selectedFrame.editCanvas, {
       brightness: checkerBrightness,
       neutrality: checkerNeutrality,
     });
 
+    commitCanvasHistory("Remove checker background from selected frame", before);
     forceRerenderRows();
   }
 
   function applyCheckerBgToRow() {
     if (!selectedRow) return;
+    const before = snapshotFrames(selectedRow.frames);
 
     for (const frame of selectedRow.frames) {
       removeConnectedLightBackground(frame.editCanvas, {
@@ -515,59 +814,73 @@ function App() {
       });
     }
 
+    commitCanvasHistory("Remove checker background from row", before);
     forceRerenderRows();
   }
 
   function applyHaloToSelected() {
     if (!selectedFrame) return;
+    const before = snapshotFrames([selectedFrame]);
     removeWhiteHalo(selectedFrame.editCanvas, haloThreshold, 2);
+    commitCanvasHistory("Remove halo from selected frame", before);
     forceRerenderRows();
   }
 
   function applyHaloToRow() {
     if (!selectedRow) return;
+    const before = snapshotFrames(selectedRow.frames);
 
     for (const frame of selectedRow.frames) {
       removeWhiteHalo(frame.editCanvas, haloThreshold, 2);
     }
 
+    commitCanvasHistory("Remove halo from row", before);
     forceRerenderRows();
   }
 
   function safeCleanupSelected() {
     if (!selectedFrame) return;
+    const before = snapshotFrames([selectedFrame]);
     runSafeCleanup(selectedFrame.editCanvas);
+    commitCanvasHistory("Safe cleanup selected frame", before);
     forceRerenderRows();
   }
 
   function safeCleanupRow() {
     if (!selectedRow) return;
+    const before = snapshotFrames(selectedRow.frames);
 
     for (const frame of selectedRow.frames) {
       runSafeCleanup(frame.editCanvas);
     }
 
+    commitCanvasHistory("Safe cleanup row", before);
     forceRerenderRows();
   }
 
   function strongCleanupSelected() {
     if (!selectedFrame) return;
+    const before = snapshotFrames([selectedFrame]);
     runStrongCleanup(selectedFrame.editCanvas);
+    commitCanvasHistory("Strong cleanup selected frame", before);
     forceRerenderRows();
   }
 
   function strongCleanupRow() {
     if (!selectedRow) return;
+    const before = snapshotFrames(selectedRow.frames);
 
     for (const frame of selectedRow.frames) {
       runStrongCleanup(frame.editCanvas);
     }
 
+    commitCanvasHistory("Strong cleanup row", before);
     forceRerenderRows();
   }
 
   function resetSelectedFrame() {
     if (!selectedFrame) return;
+    const before = snapshotFrames([selectedFrame]);
 
     const context = selectedFrame.editCanvas.getContext("2d");
     if (!context) return;
@@ -575,11 +888,13 @@ function App() {
     context.clearRect(0, 0, selectedFrame.editCanvas.width, selectedFrame.editCanvas.height);
     context.drawImage(selectedFrame.originalCanvas, 0, 0);
 
+    commitCanvasHistory("Reset selected frame", before);
     forceRerenderRows();
   }
 
   function resetSelectedRowFrames() {
     if (!selectedRow) return;
+    const before = snapshotFrames(selectedRow.frames);
 
     for (const frame of selectedRow.frames) {
       const context = frame.editCanvas.getContext("2d");
@@ -589,6 +904,7 @@ function App() {
       context.drawImage(frame.originalCanvas, 0, 0);
     }
 
+    commitCanvasHistory("Reset selected row images", before);
     forceRerenderRows();
   }
 
@@ -704,22 +1020,17 @@ function App() {
     if (!canvas || !selectedFrame) return;
 
     const source = selectedFrame.editCanvas;
-    const maxSize = 520;
-    const scale = Math.min(maxSize / source.width, maxSize / source.height, 2);
+    const zoom = Math.max(0.25, editorZoom);
 
-    canvas.width = Math.round(source.width * scale);
-    canvas.height = Math.round(source.height * scale);
+    canvas.width = Math.max(1, Math.round(source.width * zoom));
+    canvas.height = Math.max(1, Math.round(source.height * zoom));
 
     const context = canvas.getContext("2d");
     if (!context) return;
 
     context.imageSmoothingEnabled = false;
-    drawCheckerboard(context, canvas.width, canvas.height, 16);
+    drawCheckerboard(context, canvas.width, canvas.height, Math.max(8, Math.round(16 * zoom)));
     context.drawImage(source, 0, 0, canvas.width, canvas.height);
-  }
-
-  function getSelectedFrameBoundsForDrawing(frame: SpriteFrame, row: AnimationRow | null) {
-    return getFrameBoundsForDrawing(frame, row, normalizeMode);
   }
 
   function drawSelectedFramePreview() {
@@ -808,8 +1119,8 @@ function App() {
     const y = (canvasY / rect.height) * selectedFrame.editCanvas.height;
 
     return {
-      x: Math.floor(x),
-      y: Math.floor(y),
+      x: Math.min(selectedFrame.editCanvas.width - 1, Math.max(0, Math.floor(x))),
+      y: Math.min(selectedFrame.editCanvas.height - 1, Math.max(0, Math.floor(y))),
       canvasX,
       canvasY,
     };
@@ -827,12 +1138,15 @@ function App() {
       sourceY: point.y,
     });
 
+    if (brushMode === "pan") return;
+
     if (brushMode === "pick") {
       const context = selectedFrame.editCanvas.getContext("2d");
       if (!context) return;
 
-      const pixel = context.getImageData(point.x, point.y, 1, 1).data;
-      setPickedColor([pixel[0], pixel[1], pixel[2]]);
+      const sampleSize = event.ctrlKey ? 5 : event.shiftKey ? 3 : 1;
+      const color = sampleAverageColor(context, point.x, point.y, sampleSize, selectedFrame.editCanvas.width, selectedFrame.editCanvas.height);
+      setPickedColor(color);
       return;
     }
 
@@ -859,7 +1173,42 @@ function App() {
     forceRerenderRows();
   }
 
+  function beginPan(event: React.PointerEvent) {
+    const scroll = editorScrollRef.current;
+    if (!scroll) return;
+
+    isPanningRef.current = true;
+    panStartRef.current = {
+      pointerX: event.clientX,
+      pointerY: event.clientY,
+      scrollLeft: scroll.scrollLeft,
+      scrollTop: scroll.scrollTop,
+    };
+  }
+
+  function updatePan(event: React.PointerEvent) {
+    const scroll = editorScrollRef.current;
+    if (!scroll) return;
+
+    const start = panStartRef.current;
+    scroll.scrollLeft = start.scrollLeft - (event.clientX - start.pointerX);
+    scroll.scrollTop = start.scrollTop - (event.clientY - start.pointerY);
+  }
+
   function handlePointerDown(event: React.PointerEvent) {
+    event.currentTarget.setPointerCapture(event.pointerId);
+
+    if (brushMode === "pan" || event.button === 1 || event.altKey) {
+      beginPan(event);
+      return;
+    }
+
+    if (brushMode === "erase" || brushMode === "restore") {
+      activePaintHistoryRef.current = selectedFrame
+        ? { frameId: selectedFrame.id, beforeDataUrl: selectedFrame.editCanvas.toDataURL("image/png") }
+        : null;
+    }
+
     isPaintingRef.current = true;
     paintAt(event);
   }
@@ -877,16 +1226,31 @@ function App() {
       });
     }
 
+    if (isPanningRef.current) {
+      updatePan(event);
+      return;
+    }
+
     if (!isPaintingRef.current) return;
     paintAt(event);
   }
 
-  function handlePointerUp() {
+  function finishPointerAction() {
+    if (isPaintingRef.current && activePaintHistoryRef.current && selectedFrame) {
+      commitCanvasHistory("Manual " + brushMode, [activePaintHistoryRef.current]);
+    }
+
+    activePaintHistoryRef.current = null;
     isPaintingRef.current = false;
+    isPanningRef.current = false;
+  }
+
+  function handlePointerUp() {
+    finishPointerAction();
   }
 
   function handlePointerLeave() {
-    isPaintingRef.current = false;
+    finishPointerAction();
     setPointerPreview(null);
   }
 
@@ -979,16 +1343,86 @@ ${animationCode}`;
 
   return (
     <main className="app">
-      <header className="hero">
+      <header className="appMenu">
+        <div className="menuBrand">
+          <strong>Zarathustra Asset Workbench</strong>
+          <span>{projectName}</span>
+        </div>
+
+        <nav className="menuGroup" aria-label="File actions">
+          <span className="menuLabel">File</span>
+          <button type="button" onClick={createNewProject}>New</button>
+          <button type="button" onClick={handleSaveProject}>Save</button>
+          <button type="button" onClick={exportProjectJson}>Save As</button>
+          <label className="menuUpload">
+            Import Images
+            <input
+              type="file"
+              accept="image/png,image/webp,image/jpeg,image/jpg,image/gif,image/bmp,image/*"
+              multiple
+              onChange={(event) => {
+                if (event.target.files) stageImportFiles(event.target.files);
+                event.currentTarget.value = "";
+              }}
+            />
+          </label>
+          <label className="menuUpload">
+            Open
+            <input
+              type="file"
+              accept=".assetworkbench,application/json"
+              onChange={(event) => {
+                void importProjectJson(event.target.files);
+                event.currentTarget.value = "";
+              }}
+            />
+          </label>
+        </nav>
+
+        <nav className="menuGroup" aria-label="Edit actions">
+          <span className="menuLabel">Edit</span>
+          <button type="button" onClick={undo} disabled={undoStack.length === 0}>Undo</button>
+          <button type="button" onClick={redo} disabled={redoStack.length === 0}>Redo</button>
+          <button type="button" className={brushMode === "erase" ? "activeButton" : ""} onClick={() => setBrushMode("erase")}>Erase</button>
+          <button type="button" className={brushMode === "restore" ? "activeButton" : ""} onClick={() => setBrushMode("restore")}>Restore</button>
+          <button type="button" className={brushMode === "pick" ? "activeButton" : ""} onClick={() => setBrushMode("pick")}>Pick</button>
+          <button type="button" className={brushMode === "pan" ? "activeButton" : ""} onClick={() => setBrushMode("pan")}>Pan</button>
+        </nav>
+
+        <nav className="menuGroup" aria-label="View actions">
+          <span className="menuLabel">View</span>
+          <button type="button" onClick={() => stepEditorZoom(-1)}>−</button>
+          <select
+            className="zoomSelect"
+            value={editorZoom}
+            onChange={(event) => setEditorZoom(Number(event.target.value))}
+            aria-label="Editor zoom"
+          >
+            {EDITOR_ZOOM_LEVELS.map((zoom) => (
+              <option key={zoom} value={zoom}>{Math.round(zoom * 100)}%</option>
+            ))}
+          </select>
+          <button type="button" onClick={() => stepEditorZoom(1)}>+</button>
+          <button type="button" className={showLoupe ? "activeButton" : ""} onClick={() => setShowLoupe((value) => !value)}>Loupe</button>
+        </nav>
+
+        <nav className="menuGroup" aria-label="Export actions">
+          <span className="menuLabel">Export</span>
+          <button type="button" onClick={exportSinglePng} disabled={!selectedFrame}>PNG</button>
+          <button type="button" onClick={exportSheet} disabled={rows.every((row) => row.frames.length === 0)}>Sheet</button>
+          <button type="button" onClick={exportMeta} disabled={rows.every((row) => row.frames.length === 0)}>JSON</button>
+        </nav>
+      </header>
+
+      <section className="hero compactHero">
         <div>
-          <p className="eyebrow">Zarathustra Asset Workbench</p>
-          <h1>Clean PNG and spritesheet export studio</h1>
+          <p className="eyebrow">{appMode === "single-png" ? "Single PNG Export" : "Spritesheet Export"}</p>
+          <h1>Clean, align, preview, export.</h1>
           <p className="subtitle">
-            Prepare generated sprites, spell effects, UI panels, icons, and tiles.
-            Clean backgrounds, align frames, export exact PNG sizes, and keep a saved local project state.
+            Use the top File/Edit/View bar for normal app actions. Ctrl+S saves locally, Ctrl+Z undoes, Ctrl+Shift+Z redoes.
           </p>
         </div>
-      </header>
+      </section>
 
       <section className="layout">
         <aside className="panel sidebar">
@@ -1052,7 +1486,7 @@ ${animationCode}`;
               Frame size
               <select
                 value={frameSize}
-                onChange={(event) => setFrameSize(Number(event.target.value))}
+                onChange={(event) => handleFrameSizeChange(Number(event.target.value))}
               >
                 {FRAME_SIZES.map((size) => (
                   <option key={size} value={size}>
@@ -1292,7 +1726,7 @@ ${animationCode}`;
                   Add frames
                   <input
                     type="file"
-                    accept="image/png,image/webp,image/jpeg"
+                    accept="image/png,image/webp,image/jpeg,image/jpg,image/gif,image/bmp,image/*"
                     multiple
                     onChange={(event) => {
                       if (event.target.files) {
@@ -1466,7 +1900,7 @@ ${animationCode}`;
 
           <h2>Manual cleanup</h2>
 
-          <div className="buttonGrid three">
+          <div className="buttonGrid four">
             <button
               className={brushMode === "erase" ? "activeButton" : ""}
               onClick={() => setBrushMode("erase")}
@@ -1485,6 +1919,12 @@ ${animationCode}`;
             >
               Pick
             </button>
+            <button
+              className={brushMode === "pan" ? "activeButton" : ""}
+              onClick={() => setBrushMode("pan")}
+            >
+              Pan
+            </button>
           </div>
 
           <label>
@@ -1498,6 +1938,27 @@ ${animationCode}`;
               onChange={(event) => setBrushSize(Number(event.target.value))}
             />
           </label>
+
+          <div className="grid2">
+            <label>
+              Editor zoom
+              <select value={editorZoom} onChange={(event) => setEditorZoom(Number(event.target.value))}>
+                {EDITOR_ZOOM_LEVELS.map((zoom) => (
+                  <option key={zoom} value={zoom}>{Math.round(zoom * 100)}%</option>
+                ))}
+              </select>
+            </label>
+            <label className="check inlineCheck">
+              <input
+                type="checkbox"
+                checked={showLoupe}
+                onChange={(event) => setShowLoupe(event.target.checked)}
+              />
+              Magnifier
+            </label>
+          </div>
+
+          <p className="info">Pick mode: click samples 1×1, Shift-click samples 3×3, Ctrl-click samples 5×5. Pan with the Pan tool, middle mouse, or Alt-drag.</p>
 
           <label>
             Checker brightness: {checkerBrightness}
@@ -1711,10 +2172,23 @@ ${animationCode}`;
         </aside>
 
         <section className="workspace">
+          <ImportBrowser
+            candidates={importCandidates}
+            activeId={activeImportId}
+            selectedRowName={selectedRow?.name ?? rows[0]?.name ?? "row"}
+            onStageFiles={stageImportFiles}
+            onSetActive={setActiveImportId}
+            onToggle={toggleImportCandidate}
+            onSelectAll={() => setAllImportCandidates(true)}
+            onSelectNone={() => setAllImportCandidates(false)}
+            onClear={clearImportCandidates}
+            onImport={() => importSelectedCandidates(selectedRow?.id ?? rows[0].id)}
+          />
+
           <div className="panel">
             <h2>Frame cleanup editor</h2>
             <p className="hint">Clean or restore pixels here. The same cleaned frame can export as a fixed-size PNG or a spritesheet cell.</p>
-            <div className="canvasWrap editorWrap">
+            <div className="canvasWrap editorWrap" ref={editorScrollRef}>
               {selectedFrame ? (
                 <div className="editorCanvasShell">
                   <canvas
@@ -1726,7 +2200,7 @@ ${animationCode}`;
                     onPointerLeave={handlePointerLeave}
                   />
 
-                  {pointerPreview?.visible && (
+                  {showLoupe && pointerPreview?.visible && (
                     <BrushLoupe
                       frame={selectedFrame}
                       pointer={pointerPreview}
@@ -1736,11 +2210,7 @@ ${animationCode}`;
                   )}
                 </div>
               ) : (
-                <EmptyState
-                  onFiles={(files) =>
-                    addFramesToRow(selectedRow?.id ?? rows[0].id, files)
-                  }
-                />
+                <EmptyState onFiles={stageImportFiles} />
               )}
             </div>
           </div>
@@ -1818,12 +2288,139 @@ ${animationCode}`;
   );
 }
 
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function ImportBrowser({
+  candidates,
+  activeId,
+  selectedRowName,
+  onStageFiles,
+  onSetActive,
+  onToggle,
+  onSelectAll,
+  onSelectNone,
+  onClear,
+  onImport,
+}: {
+  candidates: ImportCandidate[];
+  activeId: string | null;
+  selectedRowName: string;
+  onStageFiles: (files: FileList | File[]) => void;
+  onSetActive: (id: string) => void;
+  onToggle: (id: string) => void;
+  onSelectAll: () => void;
+  onSelectNone: () => void;
+  onClear: () => void;
+  onImport: () => void;
+}) {
+  const activeCandidate = candidates.find((candidate) => candidate.id === activeId) ?? candidates[0] ?? null;
+  const selectedCount = candidates.filter((candidate) => candidate.selected).length;
+
+  return (
+    <div className="panel importBrowserPanel">
+      <div className="panelHeaderRow">
+        <div>
+          <h2>Image import browser</h2>
+          <p className="hint">
+            Use this when the Linux/Tauri file picker does not show a useful image preview. Pick a folder or several files, then choose the exact images from thumbnails inside the app.
+          </p>
+        </div>
+        <div className="importActions">
+          <label className="uploadMini">
+            Choose images
+            <input
+              type="file"
+              accept="image/png,image/webp,image/jpeg,image/jpg,image/gif,image/bmp,image/*"
+              multiple
+              onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                if (event.target.files) onStageFiles(event.target.files);
+                event.currentTarget.value = "";
+              }}
+            />
+          </label>
+          <label className="uploadMini">
+            Choose folder
+            <input
+              type="file"
+              accept="image/png,image/webp,image/jpeg,image/jpg,image/gif,image/bmp,image/*"
+              multiple
+              {...({ webkitdirectory: "", directory: "" } as Record<string, string>)}
+              onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                if (event.target.files) onStageFiles(event.target.files);
+                event.currentTarget.value = "";
+              }}
+            />
+          </label>
+        </div>
+      </div>
+
+      {candidates.length === 0 ? (
+        <div className="importEmpty">
+          <strong>No images staged.</strong>
+          <span>Pick a whole folder when the Linux file chooser does not show useful thumbnails.</span>
+        </div>
+      ) : (
+        <div className="importBrowserGrid">
+          <div className="importPreviewPane">
+            {activeCandidate ? (
+              <>
+                <img src={activeCandidate.url} alt={activeCandidate.file.name} />
+                <div className="importPreviewMeta">
+                  <strong>{activeCandidate.file.name}</strong>
+                  <span>{formatBytes(activeCandidate.file.size)}</span>
+                </div>
+              </>
+            ) : null}
+          </div>
+
+          <div className="importThumbPane">
+            <div className="importToolbar">
+              <span>{selectedCount} / {candidates.length} selected for “{selectedRowName}”</span>
+              <button type="button" onClick={onSelectAll}>All</button>
+              <button type="button" onClick={onSelectNone}>None</button>
+              <button type="button" onClick={onClear}>Clear</button>
+              <button type="button" className="primaryButton" onClick={onImport} disabled={selectedCount === 0}>Import selected</button>
+            </div>
+
+            <div className="importThumbGrid">
+              {candidates.map((candidate) => (
+                <button
+                  type="button"
+                  key={candidate.id}
+                  className={`importThumb ${candidate.id === activeCandidate?.id ? "active" : ""} ${candidate.selected ? "selected" : ""}`}
+                  onClick={() => onSetActive(candidate.id)}
+                  onDoubleClick={() => onToggle(candidate.id)}
+                  title={`${candidate.selected ? "Selected" : "Not selected"}: ${candidate.file.name}`}
+                >
+                  <img src={candidate.url} alt={candidate.file.name} />
+                  <span>{candidate.file.name}</span>
+                  <input
+                    type="checkbox"
+                    checked={candidate.selected}
+                    onChange={() => onToggle(candidate.id)}
+                    onClick={(event) => event.stopPropagation()}
+                    aria-label={`Select ${candidate.file.name}`}
+                  />
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function EmptyState({ onFiles }: { onFiles: (files: FileList) => void }) {
   return (
     <label className="emptyDrop">
       <input
         type="file"
-        accept="image/png,image/webp,image/jpeg"
+        accept="image/png,image/webp,image/jpeg,image/jpg,image/gif,image/bmp,image/*"
         multiple
         onChange={(event: ChangeEvent<HTMLInputElement>) => {
           if (event.target.files) onFiles(event.target.files);
@@ -1843,36 +2440,50 @@ function FrameThumb({ frame }: { frame: SpriteFrame }) {
     const canvas = ref.current;
     if (!canvas) return;
 
-    canvas.width = 48;
-    canvas.height = 48;
+    const thumbSize = 64;
+    const innerSize = 54;
+    canvas.width = thumbSize;
+    canvas.height = thumbSize;
 
     const context = canvas.getContext("2d");
     if (!context) return;
 
+    context.clearRect(0, 0, thumbSize, thumbSize);
     context.imageSmoothingEnabled = false;
-    drawCheckerboard(context, 48, 48, 8);
+    drawCheckerboard(context, thumbSize, thumbSize, 8);
 
-    const bounds = findVisibleBounds(frame.editCanvas);
-    const scale = Math.min(38 / bounds.width, 38 / bounds.height);
-    const width = bounds.width * scale;
-    const height = bounds.height * scale;
+    let bounds = findVisibleBounds(frame.editCanvas);
+
+    if (bounds.width <= 1 || bounds.height <= 1) {
+      bounds = {
+        x: 0,
+        y: 0,
+        width: frame.originalCanvas.width,
+        height: frame.originalCanvas.height,
+      };
+    }
+
+    const safeWidth = Math.max(1, bounds.width);
+    const safeHeight = Math.max(1, bounds.height);
+    const scale = Math.min(innerSize / safeWidth, innerSize / safeHeight);
+    const width = safeWidth * scale;
+    const height = safeHeight * scale;
 
     context.drawImage(
       frame.editCanvas,
       bounds.x,
       bounds.y,
-      bounds.width,
-      bounds.height,
-      24 - width / 2,
-      24 - height / 2,
+      safeWidth,
+      safeHeight,
+      thumbSize / 2 - width / 2,
+      thumbSize / 2 - height / 2,
       width,
       height
     );
   }, [frame]);
 
-  return <canvas ref={ref} />;
+  return <canvas ref={ref} className="thumbCanvas" aria-label={frame.fileName} />;
 }
-
 function BrushLoupe({
   frame,
   pointer,
@@ -1885,26 +2496,28 @@ function BrushLoupe({
   brushMode: BrushMode;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [colorText, setColorText] = useState("RGB — / HEX —");
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const size = 128;
-    const zoom = 4;
-    const sourceSize = size / zoom;
+    const size = 150;
+    const sourceSize = 15;
+    const zoom = size / sourceSize;
 
     canvas.width = size;
     canvas.height = size;
 
     const context = canvas.getContext("2d");
-    if (!context) return;
+    const sourceContext = frame.editCanvas.getContext("2d");
+    if (!context || !sourceContext) return;
 
     context.imageSmoothingEnabled = false;
-    drawCheckerboard(context, size, size, 8);
+    drawCheckerboard(context, size, size, 10);
 
-    const sx = pointer.sourceX - sourceSize / 2;
-    const sy = pointer.sourceY - sourceSize / 2;
+    const sx = pointer.sourceX - Math.floor(sourceSize / 2);
+    const sy = pointer.sourceY - Math.floor(sourceSize / 2);
 
     context.drawImage(
       frame.editCanvas,
@@ -1918,28 +2531,40 @@ function BrushLoupe({
       size
     );
 
+    context.strokeStyle = "rgba(255,255,255,0.22)";
+    context.lineWidth = 1;
+    for (let index = 0; index <= sourceSize; index++) {
+      const position = Math.round(index * zoom);
+      context.beginPath();
+      context.moveTo(position, 0);
+      context.lineTo(position, size);
+      context.moveTo(0, position);
+      context.lineTo(size, position);
+      context.stroke();
+    }
+
+    const center = Math.floor(sourceSize / 2) * zoom;
+    context.strokeStyle = "rgba(250, 204, 21, 0.98)";
+    context.lineWidth = 2;
+    context.strokeRect(center, center, zoom, zoom);
+
     context.strokeStyle =
       brushMode === "erase"
         ? "rgba(248, 113, 113, 0.95)"
         : brushMode === "restore"
           ? "rgba(52, 211, 153, 0.95)"
-          : "rgba(250, 204, 21, 0.95)";
+          : brushMode === "pan"
+            ? "rgba(147, 197, 253, 0.95)"
+            : "rgba(250, 204, 21, 0.95)";
 
     context.lineWidth = 2;
-
     const brushRadius = Math.max(2, (brushSize / 2) * zoom);
-
     context.beginPath();
     context.arc(size / 2, size / 2, brushRadius, 0, Math.PI * 2);
     context.stroke();
 
-    context.strokeStyle = "rgba(255,255,255,0.75)";
-    context.beginPath();
-    context.moveTo(size / 2 - 8, size / 2);
-    context.lineTo(size / 2 + 8, size / 2);
-    context.moveTo(size / 2, size / 2 - 8);
-    context.lineTo(size / 2, size / 2 + 8);
-    context.stroke();
+    const pixel = sourceContext.getImageData(pointer.sourceX, pointer.sourceY, 1, 1).data;
+    setColorText("RGB " + pixel[0] + ", " + pixel[1] + ", " + pixel[2] + " · " + rgbToHex(pixel[0], pixel[1], pixel[2]));
   }, [frame, pointer, brushSize, brushMode]);
 
   return (
@@ -1951,7 +2576,7 @@ function BrushLoupe({
       }}
     >
       <canvas ref={canvasRef} />
-      <div>{brushMode}</div>
+      <div>{brushMode} · {colorText}</div>
     </div>
   );
 }

@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "asset-workbench",
+  "productName": "Sprite Workbench",
   "version": "0.1.0",
-  "identifier": "com.tauri.dev",
+  "identifier": "com.spriteworkbench.app",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5174",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "asset-workbench",
+        "title": "Sprite Workbench",
         "width": 800,
         "height": 600,
         "resizable": true,
