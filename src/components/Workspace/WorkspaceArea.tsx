@@ -1,4 +1,3 @@
-import React from "react";
 import { useProject } from "../../store/ProjectContext";
 
 import { ImportModal } from "./ImportModal";
@@ -22,7 +21,6 @@ export function WorkspaceArea() {
     sheetPreviewCanvasRef,
     singlePngPreviewCanvasRef,
     selectedFrame,
-    rows
   } = useProject();
 
   return (

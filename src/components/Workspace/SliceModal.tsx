@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import { useState } from "react";
 import { useProject } from "../../store/ProjectContext";
 
 export function SliceModal() {

@@ -1,6 +1,4 @@
-import React, { ChangeEvent } from "react";
 import { useProject } from "../../store/ProjectContext";
-import type { ImportCandidate } from "../../store/ProjectContext"; // Wait, it's defined in ProjectTypes, let's just grab it from context where we exported it
 
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -14,7 +12,6 @@ export function ImportModal() {
     activeImportId,
     selectedRow,
     rows,
-    stageImportFiles,
     setActiveImportId,
     toggleImportCandidate,
     setAllImportCandidates,

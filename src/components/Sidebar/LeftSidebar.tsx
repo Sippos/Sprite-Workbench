@@ -1,4 +1,4 @@
-import React from "react";
+
 import { useProject } from "../../store/ProjectContext";
 import { Plus, Trash2, ChevronUp, ChevronDown } from "lucide-react";
 

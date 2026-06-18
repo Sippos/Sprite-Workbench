@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import type { AppSettings, AssetWorkbenchMode, AssetWorkbenchProject, SinglePngAnchor, SinglePngExportSettings, SinglePngFitMode } from "../app/project/ProjectTypes";
+import type { AppSettings, AssetWorkbenchMode, AssetWorkbenchProject, SinglePngExportSettings, SinglePngFitMode } from "../app/project/ProjectTypes";
 import { loadProject, loadSettings, saveProject, saveSettings } from "../app/project/ProjectStore";
 
 // Type definitions from App.tsx
