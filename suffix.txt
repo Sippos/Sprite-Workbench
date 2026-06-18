@@ -1,0 +1,45 @@
+  return {
+    assetId, setAssetId, frameSize, handleFrameSizeChange, columns, setColumns, appMode, setAppMode,
+    projectName, setProjectName, projectCreatedAt, lastSavedAt, saveStatus,
+    settings, singlePng, updateSinglePng, applySinglePngPreset,
+    normalizeMode, setNormalizeMode,
+    rows, setRows, selectedRowId, setSelectedRowId, selectedFrameId, setSelectedFrameId,
+    selectedRow, selectedFrame,
+    globalScale, setGlobalScale, feetX, setFeetX, feetY, setFeetY,
+    collisionRadius, setCollisionRadius, collisionOffsetY, setCollisionOffsetY,
+    removeWhiteThreshold, setRemoveWhiteThreshold, pickedColor, setPickedColor, colorTolerance, setColorTolerance,
+    checkerBrightness, setCheckerBrightness, checkerNeutrality, setCheckerNeutrality, haloThreshold, setHaloThreshold,
+    brushMode, setBrushMode, brushSize, setBrushSize, editorZoom, setEditorZoom, stepEditorZoom, showLoupe, setShowLoupe,
+    undoStack, redoStack, undo, redo,
+    importCandidates, setImportCandidates, activeImportId, setActiveImportId,
+    stageImportFiles, clearImportCandidates, toggleImportCandidate, setAllImportCandidates, importSelectedCandidates,
+    showGuides, setShowGuides, previewTick, pointerPreview, setPointerPreview,
+    editorScrollRef, editorCanvasRef, framePreviewCanvasRef, animationPreviewCanvasRef, rowAlignmentCanvasRef, sheetPreviewCanvasRef, singlePngPreviewCanvasRef,
+    handleSaveProject, exportProjectJson, importProjectJson, createNewProject,
+    addRow, deleteRow, renameRow, updateRowFrameRate, deleteFrame, moveFrame,
+    applyRemoveNearWhiteToSelected, applyRemoveNearWhiteToRow,
+    applyPickedColorToSelected, applyPickedColorToRow,
+    applyCheckerBgToSelected, applyCheckerBgToRow,
+    applyHaloToSelected, applyHaloToRow,
+    safeCleanupSelected, safeCleanupRow, strongCleanupSelected, strongCleanupRow,
+    resetSelectedFrame, resetSelectedRowFrames, resetSelectedFrameTransform, applySelectedTransformToRow,
+    lockCropFromSelectedFrame, lockCropFromRowUnion, clearSelectedRowCrop,
+    exportSinglePng, exportSheet, exportMeta, copyPhaserSnippet,
+    handlePointerDown, handlePointerMove, handlePointerUp, handlePointerLeave,
+    totalSheetWidth, totalSheetHeight
+  };
+}
+
+export type ProjectContextType = ReturnType<typeof useProjectState>;
+export const ProjectContext = createContext<ProjectContextType | null>(null);
+
+export function ProjectProvider({ children }: { children: ReactNode }) {
+  const state = useProjectState();
+  return <ProjectContext.Provider value={state}>{children}</ProjectContext.Provider>;
+}
+
+export function useProject() {
+  const ctx = useContext(ProjectContext);
+  if (!ctx) throw new Error("useProject must be used within ProjectProvider");
+  return ctx;
+}
