@@ -1,4 +1,4 @@
-import React from "react";
+
 import { useProject } from "../../store/ProjectContext";
 import { FRAME_SIZES, SINGLE_PNG_PRESETS } from "../../store/ProjectContext";
 import type { SinglePngAnchor, SinglePngFitMode } from "../../app/project/ProjectTypes";
@@ -9,11 +9,9 @@ export function PropertiesPanel() {
     frameSize, handleFrameSizeChange, columns, setColumns,
     globalScale, setGlobalScale, feetX, setFeetX, feetY, setFeetY,
     collisionRadius, setCollisionRadius, collisionOffsetY, setCollisionOffsetY,
-    removeWhiteThreshold, setRemoveWhiteThreshold, pickedColor, setPickedColor, colorTolerance, setColorTolerance,
-    checkerBrightness, setCheckerBrightness, checkerNeutrality, setCheckerNeutrality, haloThreshold, setHaloThreshold,
+    removeWhiteThreshold, setRemoveWhiteThreshold,
+    haloThreshold, setHaloThreshold,
     applyRemoveNearWhiteToSelected, applyRemoveNearWhiteToRow,
-    applyPickedColorToSelected, applyPickedColorToRow,
-    applyCheckerBgToSelected, applyCheckerBgToRow,
     applyHaloToSelected, applyHaloToRow,
     safeCleanupSelected, safeCleanupRow, strongCleanupSelected, strongCleanupRow,
     resetSelectedFrame, resetSelectedRowFrames,

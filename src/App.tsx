@@ -1,4 +1,4 @@
-import React from "react";
+
 import { ProjectProvider } from "./store/ProjectContext";
 import { WorkbenchLayout } from "./components/Layout/WorkbenchLayout";
 import "./ide-styles.css";

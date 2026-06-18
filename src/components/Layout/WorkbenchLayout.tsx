@@ -1,4 +1,4 @@
-import React from "react";
+
 import { TopMenu } from "./TopMenu";
 import { LeftSidebar } from "../Sidebar/LeftSidebar";
 import { WorkspaceArea } from "../Workspace/WorkspaceArea";

@@ -1,4 +1,4 @@
-import React from "react";
+
 import { useProject } from "../../store/ProjectContext";
 import { EDITOR_ZOOM_LEVELS } from "../../store/ProjectContext";
 import { Save, FolderOpen, Undo2, Redo2, MousePointer2, Eraser, Paintbrush, ZoomIn, ZoomOut, Download, FileUp, PlusSquare, Grid3X3 } from "lucide-react";
