@@ -14,6 +14,7 @@ export function SliceModal() {
   const [sliceRows, setSliceRows] = useState(1);
   const [skipEmpty, setSkipEmpty] = useState(true);
   const [autoCenter, setAutoCenter] = useState(true);
+  const [removeWhiteBg, setRemoveWhiteBg] = useState(true);
   const [targetRowId, setTargetRowId] = useState<string | null>(null);
 
   const defaultTarget = selectedRow?.id ?? (rows.length > 0 ? rows[0].id : "NEW");
@@ -93,6 +94,14 @@ export function SliceModal() {
                 /> 
                 Auto-center cropped content
               </label>
+              <label className="checkbox" title="Removes solid or near-white backgrounds during import.">
+                <input 
+                  type="checkbox" 
+                  checked={removeWhiteBg} 
+                  onChange={(e) => setRemoveWhiteBg(e.target.checked)} 
+                /> 
+                Remove white background (Clean)
+              </label>
             </div>
 
             <div className="sliceActions">
@@ -110,7 +119,7 @@ export function SliceModal() {
               <button 
                 type="button" 
                 className="primaryButton" 
-                onClick={() => sliceAndImportSpritesheet(cols, sliceRows, skipEmpty, autoCenter, effectiveTargetRowId)}
+                onClick={() => sliceAndImportSpritesheet(cols, sliceRows, skipEmpty, autoCenter, removeWhiteBg, effectiveTargetRowId)}
               >
                 Slice & Import
               </button>

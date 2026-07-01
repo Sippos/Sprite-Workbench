@@ -409,7 +409,10 @@ button:hover { background: #334155; }
 /* Slice Modal */
 .slice-modal-content {
   width: 800px;
-  height: 600px;
+  max-width: 90vw;
+  height: auto;
+  min-height: 500px;
+  max-height: 90vh;
 }
 
 .sliceBrowserGrid {
@@ -450,6 +453,7 @@ button:hover { background: #334155; }
   background: #1e293b;
   padding: 24px;
   gap: 24px;
+  overflow-y: auto;
 }
 
 .sliceSettingsPane .prop-section {
