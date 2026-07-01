@@ -577,14 +577,22 @@ export function useProjectState() {
           const targetX = Math.floor((frameWidth - contentWidth) / 2);
           const targetY = Math.floor((frameHeight - contentHeight) / 2);
           
-          editContext.drawImage(
-            originalCanvas,
-            minX, minY, contentWidth, contentHeight,
-            targetX, targetY, contentWidth, contentHeight
-          );
-        } else {
-          editContext.drawImage(originalCanvas, 0, 0);
+          const centeredCanvas = document.createElement("canvas");
+          centeredCanvas.width = frameWidth;
+          centeredCanvas.height = frameHeight;
+          const centeredContext = centeredCanvas.getContext("2d");
+          if (centeredContext) {
+            centeredContext.drawImage(
+              originalCanvas,
+              minX, minY, contentWidth, contentHeight,
+              targetX, targetY, contentWidth, contentHeight
+            );
+            originalContext.clearRect(0, 0, frameWidth, frameHeight);
+            originalContext.drawImage(centeredCanvas, 0, 0);
+          }
         }
+        
+        editContext.drawImage(originalCanvas, 0, 0);
 
         newFrames.push({
           id: createId(),
