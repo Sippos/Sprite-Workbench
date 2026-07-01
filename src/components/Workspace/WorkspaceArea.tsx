@@ -65,6 +65,10 @@ export function WorkspaceArea() {
           </div>
           {appMode === "single-png" && (
             <div className="single-png-export-bar">
+              <div className="single-png-export-info">
+                <strong>Standalone Export Settings</strong>
+                <p>These settings customize the exported single image. They do <em>not</em> change the frame within the spritesheet.</p>
+              </div>
               <label>Preset
                 <select value={singlePng.preset} onChange={(e) => applySinglePngPreset(e.target.value)}>
                   {SINGLE_PNG_PRESETS.map(p => <option key={p.label} value={p.label}>{p.label}</option>)}

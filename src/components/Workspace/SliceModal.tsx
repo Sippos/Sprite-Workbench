@@ -15,7 +15,8 @@ export function SliceModal() {
   const [skipEmpty, setSkipEmpty] = useState(true);
   const [autoCenter, setAutoCenter] = useState(true);
   const [removeWhiteBg, setRemoveWhiteBg] = useState(true);
-  const [maxFrames, setMaxFrames] = useState(0);
+  const [importRow, setImportRow] = useState(0);
+  const [importCol, setImportCol] = useState(0);
   const [targetRowId, setTargetRowId] = useState<string | null>(null);
 
   const defaultTarget = selectedRow?.id ?? (rows.length > 0 ? rows[0].id : "NEW");
@@ -79,13 +80,24 @@ export function SliceModal() {
                   onChange={(e) => setSliceRows(Math.max(1, Number(e.target.value)))} 
                 />
               </label>
-              <label title="0 means import all frames in the grid. Set a number to stop importing early (e.g. only first row).">
-                Max Frames (0=All)
+              <label title="0 means import all rows. Set to a specific number (e.g. 1) to only import that row.">
+                Specific Row (0=All)
                 <input 
                   type="number" 
-                  min={0} 
-                  value={maxFrames} 
-                  onChange={(e) => setMaxFrames(Math.max(0, Number(e.target.value)))} 
+                  min={0}
+                  max={sliceRows}
+                  value={importRow} 
+                  onChange={(e) => setImportRow(Math.max(0, Math.min(sliceRows, Number(e.target.value))))} 
+                />
+              </label>
+              <label title="0 means import all columns. Set to a specific number (e.g. 1) to only import that column.">
+                Specific Col (0=All)
+                <input 
+                  type="number" 
+                  min={0}
+                  max={cols}
+                  value={importCol} 
+                  onChange={(e) => setImportCol(Math.max(0, Math.min(cols, Number(e.target.value))))} 
                 />
               </label>
               <label className="checkbox">
@@ -129,7 +141,7 @@ export function SliceModal() {
               <button 
                 type="button" 
                 className="primaryButton" 
-                onClick={() => sliceAndImportSpritesheet(cols, sliceRows, skipEmpty, autoCenter, removeWhiteBg, effectiveTargetRowId, maxFrames)}
+                onClick={() => sliceAndImportSpritesheet(cols, sliceRows, skipEmpty, autoCenter, removeWhiteBg, effectiveTargetRowId, importRow, importCol)}
               >
                 Slice & Import
               </button>
