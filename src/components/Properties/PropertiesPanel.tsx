@@ -13,7 +13,8 @@ export function PropertiesPanel() {
     safeCleanupSelected, safeCleanupRow, strongCleanupSelected, strongCleanupRow,
     resetSelectedFrame, resetSelectedRowFrames,
     singlePng, updateSinglePng, applySinglePngPreset,
-    showGuides, setShowGuides, totalSheetWidth, totalSheetHeight
+    showGuides, setShowGuides, totalSheetWidth, totalSheetHeight,
+    selectedFrame, updateSelectedFramePatch
   } = useProject();
 
   return (
@@ -53,6 +54,29 @@ export function PropertiesPanel() {
             <input type="checkbox" checked={showGuides} onChange={(e) => setShowGuides(e.target.checked)} /> Show Guides
           </label>
         </section>
+
+        {selectedFrame && (
+          <section className="prop-section">
+            <h3>Selected Frame Offset</h3>
+            <p className="info" style={{fontSize: "11px", marginBottom: "8px"}}>Nudge this specific frame to align perfectly in the animation.</p>
+            <div className="grid2">
+              <label>X Offset
+                <input 
+                  type="number" 
+                  value={selectedFrame.offsetX} 
+                  onChange={(e) => updateSelectedFramePatch({ offsetX: Number(e.target.value) })} 
+                />
+              </label>
+              <label>Y Offset
+                <input 
+                  type="number" 
+                  value={selectedFrame.offsetY} 
+                  onChange={(e) => updateSelectedFramePatch({ offsetY: Number(e.target.value) })} 
+                />
+              </label>
+            </div>
+          </section>
+        )}
 
         <section className="prop-section">
           <h3>Standalone Export Settings</h3>

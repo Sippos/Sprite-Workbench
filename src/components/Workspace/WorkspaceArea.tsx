@@ -90,7 +90,10 @@ export function WorkspaceArea() {
           <div className="workspace-panel">
             <h3>Single PNG Preview</h3>
             <div className="canvasWrap previewBox">
-              <canvas ref={singlePngPreviewCanvasRef} />
+              <canvas 
+                ref={singlePngPreviewCanvasRef} 
+                style={{ width: "100%", height: "100%", objectFit: "contain", imageRendering: "pixelated" }} 
+              />
             </div>
           </div>
         </div>

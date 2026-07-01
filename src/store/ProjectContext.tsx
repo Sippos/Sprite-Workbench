@@ -1410,6 +1410,7 @@ ${animationCode}`;
     applyHaloToSelected, applyHaloToRow,
     safeCleanupSelected, safeCleanupRow, strongCleanupSelected, strongCleanupRow,
     resetSelectedFrame, resetSelectedRowFrames, resetSelectedFrameTransform, applySelectedTransformToRow,
+    updateSelectedFramePatch,
     lockCropFromSelectedFrame, lockCropFromRowUnion, clearSelectedRowCrop,
     exportSinglePng, exportSheet, exportMeta, copyPhaserSnippet,
     handlePointerDown, handlePointerMove, handlePointerUp, handlePointerLeave,
