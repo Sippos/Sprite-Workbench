@@ -558,3 +558,50 @@ button:hover { background: #334155; }
   font-size: 14px;
 }
 
+.accordion-section details {
+  background: #1e293b;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.accordion-section summary {
+  cursor: pointer;
+  padding: 12px;
+  background: #2d3748;
+  font-weight: bold;
+  list-style: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  user-select: none;
+}
+
+.accordion-section summary::-webkit-details-marker {
+  display: none;
+}
+
+.accordion-section summary::after {
+  content: "▼";
+  font-size: 10px;
+  color: #94a3b8;
+  transition: transform 0.2s ease-in-out;
+}
+
+.accordion-section details[open] summary::after {
+  transform: rotate(180deg);
+}
+
+.accordion-section summary h3 {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #f8fafc;
+}
+
+.accordion-section .details-content {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
