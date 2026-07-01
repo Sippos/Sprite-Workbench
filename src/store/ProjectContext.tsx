@@ -515,16 +515,16 @@ export function useProjectState() {
     }
   }
 
-  async function sliceAndImportSpritesheet(cols: number, rows: number, skipEmpty: boolean, targetRowId: string) {
-    if (!spritesheetToSlice || cols < 1 || rows < 1) return;
+  async function sliceAndImportSpritesheet(cols: number, sliceRows: number, skipEmpty: boolean, autoCenter: boolean, targetRowId: string) {
+    if (!spritesheetToSlice || cols < 1 || sliceRows < 1) return;
 
     const image = await loadImage(spritesheetToSlice.file);
     const frameWidth = image.naturalWidth / cols;
-    const frameHeight = image.naturalHeight / rows;
+    const frameHeight = image.naturalHeight / sliceRows;
 
     const newFrames: SpriteFrame[] = [];
 
-    for (let r = 0; r < rows; r++) {
+    for (let r = 0; r < sliceRows; r++) {
       for (let c = 0; c < cols; c++) {
         const originalCanvas = document.createElement("canvas");
         originalCanvas.width = frameWidth;
@@ -538,24 +538,45 @@ export function useProjectState() {
           0, 0, frameWidth, frameHeight
         );
 
-        if (skipEmpty) {
-          const imgData = originalContext.getImageData(0, 0, frameWidth, frameHeight).data;
-          let isEmpty = true;
-          for (let i = 3; i < imgData.length; i += 4) {
-            if (imgData[i] > 0) {
+        let minX = frameWidth, minY = frameHeight, maxX = 0, maxY = 0;
+        const imgData = originalContext.getImageData(0, 0, frameWidth, frameHeight).data;
+        let isEmpty = true;
+        
+        for (let y = 0; y < frameHeight; y++) {
+          for (let x = 0; x < frameWidth; x++) {
+            const i = (y * frameWidth + x) * 4;
+            if (imgData[i + 3] > 0) {
               isEmpty = false;
-              break;
+              if (x < minX) minX = x;
+              if (x > maxX) maxX = x;
+              if (y < minY) minY = y;
+              if (y > maxY) maxY = y;
             }
           }
-          if (isEmpty) continue;
         }
+
+        if (skipEmpty && isEmpty) continue;
 
         const editCanvas = document.createElement("canvas");
         editCanvas.width = frameWidth;
         editCanvas.height = frameHeight;
         const editContext = editCanvas.getContext("2d");
         if (!editContext) continue;
-        editContext.drawImage(originalCanvas, 0, 0);
+
+        if (autoCenter && !isEmpty) {
+          const contentWidth = maxX - minX + 1;
+          const contentHeight = Math.max(1, maxY - minY + 1);
+          const targetX = Math.floor((frameWidth - contentWidth) / 2);
+          const targetY = Math.floor((frameHeight - contentHeight) / 2);
+          
+          editContext.drawImage(
+            originalCanvas,
+            minX, minY, contentWidth, contentHeight,
+            targetX, targetY, contentWidth, contentHeight
+          );
+        } else {
+          editContext.drawImage(originalCanvas, 0, 0);
+        }
 
         newFrames.push({
           id: createId(),
@@ -570,20 +591,35 @@ export function useProjectState() {
       }
     }
 
-    setRows((current) =>
-      current.map((row) => {
-        if (row.id === targetRowId) {
+    let finalTargetRowId = targetRowId;
+    if (targetRowId === "NEW") {
+      finalTargetRowId = createId();
+    }
+
+    setRows((current) => {
+      const updatedRows = [...current];
+      if (targetRowId === "NEW") {
+        updatedRows.push({
+          id: finalTargetRowId,
+          name: `anim_${current.length + 1}`,
+          frameRate: 8,
+          frames: [],
+          lockedCrop: null,
+        });
+      }
+      return updatedRows.map((row) => {
+        if (row.id === finalTargetRowId) {
           return { ...row, frames: [...row.frames, ...newFrames] };
         }
         return row;
-      })
-    );
+      });
+    });
 
     cancelSpritesheetSlice();
     setSaveStatus(`Imported ${newFrames.length} sliced frames.`);
     
     if (!selectedFrameId && newFrames[0]) {
-      setSelectedRowId(targetRowId);
+      setSelectedRowId(finalTargetRowId);
       setSelectedFrameId(newFrames[0].id);
     }
   }

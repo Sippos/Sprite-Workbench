@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useProject } from "../../store/ProjectContext";
 
 export function SliceModal() {
@@ -13,11 +13,13 @@ export function SliceModal() {
   const [cols, setCols] = useState(1);
   const [sliceRows, setSliceRows] = useState(1);
   const [skipEmpty, setSkipEmpty] = useState(true);
+  const [autoCenter, setAutoCenter] = useState(true);
+  const [targetRowId, setTargetRowId] = useState<string | null>(null);
+
+  const defaultTarget = selectedRow?.id ?? (rows.length > 0 ? rows[0].id : "NEW");
+  const effectiveTargetRowId = targetRowId ?? defaultTarget;
 
   if (!spritesheetToSlice) return null;
-
-  const targetRowId = selectedRow?.id ?? rows[0]?.id;
-  const targetRowName = selectedRow?.name ?? rows[0]?.name ?? "row";
 
   // Calculate the grid overlay styling
   const gridStyle = {
@@ -83,16 +85,32 @@ export function SliceModal() {
                 /> 
                 Skip empty transparent frames
               </label>
+              <label className="checkbox">
+                <input 
+                  type="checkbox" 
+                  checked={autoCenter} 
+                  onChange={(e) => setAutoCenter(e.target.checked)} 
+                /> 
+                Auto-center cropped content
+              </label>
             </div>
 
             <div className="sliceActions">
-              <p>Target: <strong>{targetRowName}</strong></p>
+              <label>
+                Target
+                <select value={effectiveTargetRowId} onChange={(e) => setTargetRowId(e.target.value)}>
+                  {rows.map(row => (
+                    <option key={row.id} value={row.id}>Row: {row.name}</option>
+                  ))}
+                  <option value="NEW">Create New Animation</option>
+                </select>
+              </label>
               <p>Total Frames: <strong>{cols * sliceRows}</strong></p>
               <button type="button" onClick={cancelSpritesheetSlice}>Cancel</button>
               <button 
                 type="button" 
                 className="primaryButton" 
-                onClick={() => sliceAndImportSpritesheet(cols, sliceRows, skipEmpty, targetRowId)}
+                onClick={() => sliceAndImportSpritesheet(cols, sliceRows, skipEmpty, autoCenter, effectiveTargetRowId)}
               >
                 Slice & Import
               </button>

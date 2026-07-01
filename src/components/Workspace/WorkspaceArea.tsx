@@ -21,6 +21,9 @@ export function WorkspaceArea() {
     sheetPreviewCanvasRef,
     singlePngPreviewCanvasRef,
     selectedFrame,
+    frameSize,
+    setFeetX,
+    setFeetY,
   } = useProject();
 
   return (
@@ -74,7 +77,21 @@ export function WorkspaceArea() {
             <div className="workspace-panel">
               <h3>Frame Alignment</h3>
               <div className="canvasWrap previewBox">
-                <canvas ref={framePreviewCanvasRef} />
+                <canvas 
+                  ref={framePreviewCanvasRef} 
+                  onPointerDown={(e) => {
+                    const canvas = framePreviewCanvasRef.current;
+                    if (!canvas) return;
+                    const rect = canvas.getBoundingClientRect();
+                    const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+                    const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+                    const scale = Math.max(3, Math.floor(320 / frameSize));
+                    setFeetX(Math.round(x / scale));
+                    setFeetY(Math.round(y / scale));
+                  }}
+                  style={{ cursor: "crosshair" }}
+                  title="Click to place the character pivot (feet)"
+                />
               </div>
             </div>
             <div className="workspace-panel">
