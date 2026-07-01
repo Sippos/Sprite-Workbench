@@ -1,7 +1,4 @@
-
-import { useProject } from "../../store/ProjectContext";
-import { FRAME_SIZES, SINGLE_PNG_PRESETS } from "../../store/ProjectContext";
-import type { SinglePngAnchor, SinglePngFitMode } from "../../app/project/ProjectTypes";
+import { useProject, FRAME_SIZES } from "../../store/ProjectContext";
 
 export function PropertiesPanel() {
   const {
@@ -15,7 +12,6 @@ export function PropertiesPanel() {
     applyHaloToSelected, applyHaloToRow,
     safeCleanupSelected, safeCleanupRow, strongCleanupSelected, strongCleanupRow,
     resetSelectedFrame, resetSelectedRowFrames,
-    singlePng, updateSinglePng, applySinglePngPreset,
     showGuides, setShowGuides, totalSheetWidth, totalSheetHeight
   } = useProject();
 
@@ -96,46 +92,7 @@ export function PropertiesPanel() {
           </div>
         </section>
 
-        {appMode === "single-png" && (
-          <section className="prop-section">
-            <h3>Single PNG Export</h3>
-            <label>Preset
-              <select value={singlePng.preset} onChange={(e) => applySinglePngPreset(e.target.value)}>
-                {SINGLE_PNG_PRESETS.map(p => <option key={p.label} value={p.label}>{p.label}</option>)}
-                <option value="Custom">Custom</option>
-              </select>
-            </label>
-            <div className="grid2">
-              <label>Width <input type="number" min={1} value={singlePng.width} onChange={(e) => updateSinglePng({ width: Number(e.target.value), preset: "Custom" })} /></label>
-              <label>Height <input type="number" min={1} value={singlePng.height} onChange={(e) => updateSinglePng({ height: Number(e.target.value), preset: "Custom" })} /></label>
-              <label>Fit Mode
-                <select value={singlePng.fitMode} onChange={(e) => updateSinglePng({ fitMode: e.target.value as SinglePngFitMode })}>
-                  <option value="contain">Contain</option>
-                  <option value="cover">Cover</option>
-                  <option value="original-size">Original</option>
-                  <option value="custom-scale">Scale</option>
-                </select>
-              </label>
-              <label>Anchor
-                <select value={singlePng.anchor} onChange={(e) => updateSinglePng({ anchor: e.target.value as SinglePngAnchor })}>
-                  <option value="center">Center</option>
-                  <option value="top-left">Top Left</option>
-                  <option value="bottom-center">Bottom</option>
-                  <option value="custom">Custom</option>
-                </select>
-              </label>
-            </div>
-            {singlePng.fitMode === "custom-scale" && (
-              <label>Scale: {singlePng.scale.toFixed(2)}
-                <input type="range" min="0.05" max="4" step="0.01" value={singlePng.scale} onChange={(e) => updateSinglePng({ scale: Number(e.target.value) })} />
-              </label>
-            )}
-            <div className="grid2">
-              <label>Offset X <input type="number" value={singlePng.xOffset} onChange={(e) => updateSinglePng({ xOffset: Number(e.target.value) })} /></label>
-              <label>Offset Y <input type="number" value={singlePng.yOffset} onChange={(e) => updateSinglePng({ yOffset: Number(e.target.value) })} /></label>
-            </div>
-          </section>
-        )}
+
       </div>
     </aside>
   );

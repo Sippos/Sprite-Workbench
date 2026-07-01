@@ -456,6 +456,34 @@ button:hover { background: #334155; }
   overflow-y: auto;
 }
 
+.single-png-export-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 16px;
+  background: #1e293b;
+  border-top: 1px solid #2d3748;
+  align-items: center;
+}
+
+.single-png-export-bar label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #cbd5e1;
+}
+
+.single-png-export-bar input[type="number"],
+.single-png-export-bar select {
+  background: #0f172a;
+  border: 1px solid #334155;
+  color: #f8fafc;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+
 .sliceSettingsPane .prop-section {
   display: flex;
   flex-direction: column;

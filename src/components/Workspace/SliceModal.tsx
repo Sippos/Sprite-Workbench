@@ -15,6 +15,7 @@ export function SliceModal() {
   const [skipEmpty, setSkipEmpty] = useState(true);
   const [autoCenter, setAutoCenter] = useState(true);
   const [removeWhiteBg, setRemoveWhiteBg] = useState(true);
+  const [maxFrames, setMaxFrames] = useState(0);
   const [targetRowId, setTargetRowId] = useState<string | null>(null);
 
   const defaultTarget = selectedRow?.id ?? (rows.length > 0 ? rows[0].id : "NEW");
@@ -78,6 +79,15 @@ export function SliceModal() {
                   onChange={(e) => setSliceRows(Math.max(1, Number(e.target.value)))} 
                 />
               </label>
+              <label title="0 means import all frames in the grid. Set a number to stop importing early (e.g. only first row).">
+                Max Frames (0=All)
+                <input 
+                  type="number" 
+                  min={0} 
+                  value={maxFrames} 
+                  onChange={(e) => setMaxFrames(Math.max(0, Number(e.target.value)))} 
+                />
+              </label>
               <label className="checkbox">
                 <input 
                   type="checkbox" 
@@ -119,7 +129,7 @@ export function SliceModal() {
               <button 
                 type="button" 
                 className="primaryButton" 
-                onClick={() => sliceAndImportSpritesheet(cols, sliceRows, skipEmpty, autoCenter, removeWhiteBg, effectiveTargetRowId)}
+                onClick={() => sliceAndImportSpritesheet(cols, sliceRows, skipEmpty, autoCenter, removeWhiteBg, effectiveTargetRowId, maxFrames)}
               >
                 Slice & Import
               </button>

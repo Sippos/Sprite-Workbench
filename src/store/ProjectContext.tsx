@@ -515,7 +515,7 @@ export function useProjectState() {
     }
   }
 
-  async function sliceAndImportSpritesheet(cols: number, sliceRows: number, skipEmpty: boolean, autoCenter: boolean, removeWhiteBg: boolean, targetRowId: string) {
+  async function sliceAndImportSpritesheet(cols: number, sliceRows: number, skipEmpty: boolean, autoCenter: boolean, removeWhiteBg: boolean, targetRowId: string, maxFrames: number) {
     if (!spritesheetToSlice || cols < 1 || sliceRows < 1) return;
 
     const image = await loadImage(spritesheetToSlice.file);
@@ -526,6 +526,10 @@ export function useProjectState() {
 
     for (let r = 0; r < sliceRows; r++) {
       for (let c = 0; c < cols; c++) {
+        if (maxFrames > 0 && newFrames.length >= maxFrames) {
+          break;
+        }
+
         const originalCanvas = document.createElement("canvas");
         originalCanvas.width = frameWidth;
         originalCanvas.height = frameHeight;

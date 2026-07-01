@@ -1,4 +1,5 @@
-import { useProject } from "../../store/ProjectContext";
+import { useProject, SINGLE_PNG_PRESETS } from "../../store/ProjectContext";
+import type { SinglePngAnchor, SinglePngFitMode } from "../../app/project/ProjectTypes";
 
 import { ImportModal } from "./ImportModal";
 import { SliceModal } from "./SliceModal";
@@ -24,6 +25,9 @@ export function WorkspaceArea() {
     frameSize,
     setFeetX,
     setFeetY,
+    singlePng,
+    updateSinglePng,
+    applySinglePngPreset,
   } = useProject();
 
   return (
@@ -59,6 +63,41 @@ export function WorkspaceArea() {
               <div className="empty">No frame selected.</div>
             )}
           </div>
+          {appMode === "single-png" && (
+            <div className="single-png-export-bar">
+              <label>Preset
+                <select value={singlePng.preset} onChange={(e) => applySinglePngPreset(e.target.value)}>
+                  {SINGLE_PNG_PRESETS.map(p => <option key={p.label} value={p.label}>{p.label}</option>)}
+                  <option value="Custom">Custom</option>
+                </select>
+              </label>
+              <label>Width <input type="number" min={1} value={singlePng.width} onChange={(e) => updateSinglePng({ width: Number(e.target.value), preset: "Custom" })} /></label>
+              <label>Height <input type="number" min={1} value={singlePng.height} onChange={(e) => updateSinglePng({ height: Number(e.target.value), preset: "Custom" })} /></label>
+              <label>Fit Mode
+                <select value={singlePng.fitMode} onChange={(e) => updateSinglePng({ fitMode: e.target.value as SinglePngFitMode })}>
+                  <option value="contain">Contain</option>
+                  <option value="cover">Cover</option>
+                  <option value="original-size">Original</option>
+                  <option value="custom-scale">Scale</option>
+                </select>
+              </label>
+              {singlePng.fitMode === "custom-scale" && (
+                <label>Scale: {singlePng.scale.toFixed(2)}
+                  <input type="range" min="0.05" max="4" step="0.01" value={singlePng.scale} onChange={(e) => updateSinglePng({ scale: Number(e.target.value) })} />
+                </label>
+              )}
+              <label>Anchor
+                <select value={singlePng.anchor} onChange={(e) => updateSinglePng({ anchor: e.target.value as SinglePngAnchor })}>
+                  <option value="center">Center</option>
+                  <option value="top-left">Top Left</option>
+                  <option value="bottom-center">Bottom</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </label>
+              <label>Offset X <input type="number" value={singlePng.xOffset} onChange={(e) => updateSinglePng({ xOffset: Number(e.target.value) })} /></label>
+              <label>Offset Y <input type="number" value={singlePng.yOffset} onChange={(e) => updateSinglePng({ yOffset: Number(e.target.value) })} /></label>
+            </div>
+          )}
         </div>
 
         <div className="workspace-side-previews">
