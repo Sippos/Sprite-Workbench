@@ -39,6 +39,7 @@ export function WorkspaceArea() {
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             onPointerLeave={handlePointerLeave}
+            onPointerCancel={handlePointerLeave}
           >
             {selectedFrame ? (
               <div className="editorCanvasShell">

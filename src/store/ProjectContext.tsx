@@ -6,9 +6,9 @@ import { loadProject, loadSettings, saveProject, saveSettings } from "../app/pro
 
 // Type definitions from App.tsx
 export type Bounds = { x: number; y: number; width: number; height: number; };
-export type SpriteFrame = { id: string; fileName: string; image: HTMLImageElement; originalCanvas: HTMLCanvasElement; editCanvas: HTMLCanvasElement; scale: number; offsetX: number; offsetY: number; };
+export type SpriteFrame = { id: string; assetId?: string; fileName: string; image: HTMLImageElement; originalCanvas: HTMLCanvasElement; editCanvas: HTMLCanvasElement; scale: number; offsetX: number; offsetY: number; };
 export type AnimationRow = { id: string; name: string; frameRate: number; frames: SpriteFrame[]; lockedCrop: Bounds | null; };
-export type BrushMode = "erase" | "restore" | "pick" | "pan";
+export type BrushMode = "erase" | "restore" | "pick" | "pan" | "pencil";
 export type HistoryChange = { frameId: string; beforeDataUrl: string; afterDataUrl: string; };
 export type HistoryEntry = { id: string; label: string; createdAt: string; changes: HistoryChange[]; };
 export type NormalizeMode = "auto" | "locked-row";
@@ -59,6 +59,7 @@ export function useProjectState() {
   const [assetId, setAssetId] = useState("zarathustra");
   const [frameSize, setFrameSize] = useState(64);
   const [columns, setColumns] = useState(DEFAULT_COLUMNS);
+  const [assets, setAssets] = useState<SpriteFrame[]>([]);
   const [appMode, setAppMode] = useState<AssetWorkbenchMode>("spritesheet");
   const [projectName, setProjectName] = useState("Zarathustra Asset Workbench");
   const [projectCreatedAt, setProjectCreatedAt] = useState(() => new Date().toISOString());
@@ -114,6 +115,7 @@ export function useProjectState() {
   const isPaintingRef = useRef(false);
   const activePaintHistoryRef = useRef<{ frameId: string; beforeDataUrl: string } | null>(null);
   const isPanningRef = useRef(false);
+  const spacePanRef = useRef(false);
   const panStartRef = useRef({ pointerX: 0, pointerY: 0, scrollLeft: 0, scrollTop: 0 });
 
   const selectedRow = useMemo(() => {
@@ -187,12 +189,23 @@ export function useProjectState() {
       }
 
       if (!isTyping && event.key === " ") {
-        setBrushMode("pan");
+        event.preventDefault();
+        spacePanRef.current = true;
+      }
+    }
+
+    function handleKeyUp(event: KeyboardEvent) {
+      if (event.key === " ") {
+        spacePanRef.current = false;
       }
     }
 
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
   }, [undoStack, redoStack, rows, selectedFrame, brushMode]);
 
   function updateSinglePng(patch: Partial<SinglePngExportSettings>) {
@@ -374,6 +387,12 @@ export function useProjectState() {
         collisionRadius,
         collisionOffsetY,
         showGuides,
+        assets: assets.map((asset) => ({
+          id: asset.id,
+          name: asset.fileName,
+          imageDataUrl: asset.originalCanvas.toDataURL("image/png"),
+          cleanedImageDataUrl: asset.editCanvas.toDataURL("image/png"),
+        })),
         rows: rows.map((row) => ({
           id: row.id,
           name: row.name,
@@ -381,9 +400,7 @@ export function useProjectState() {
           lockedCrop: row.lockedCrop,
           frames: row.frames.map((frame) => ({
             id: frame.id,
-            name: frame.fileName,
-            imageDataUrl: frame.originalCanvas.toDataURL("image/png"),
-            cleanedImageDataUrl: frame.editCanvas.toDataURL("image/png"),
+            assetId: frame.assetId ?? frame.id,
             xOffset: frame.offsetX,
             yOffset: frame.offsetY,
             scale: frame.scale,
@@ -417,13 +434,32 @@ export function useProjectState() {
   }
 
   async function applyProject(project: AssetWorkbenchProject) {
+    const loadedAssets = project.spritesheet.assets 
+      ? await Promise.all(project.spritesheet.assets.map(savedAssetToSpriteFrame))
+      : [];
+
     const loadedRows = await Promise.all(
       project.spritesheet.rows.map(async (row) => ({
         id: row.id,
         name: row.name,
         frameRate: row.frameRate,
         lockedCrop: row.lockedCrop,
-        frames: await Promise.all(row.frames.map(savedFrameToSpriteFrame)),
+        frames: await Promise.all(row.frames.map(async (frame) => {
+          // Backward compatibility for old projects
+          if ('imageDataUrl' in frame) {
+            return await savedFrameToSpriteFrame(frame as any);
+          }
+          const asset = loadedAssets.find(a => a.id === frame.assetId);
+          if (!asset) throw new Error("Missing asset");
+          return {
+            ...asset,
+            id: frame.id,
+            assetId: frame.assetId,
+            scale: frame.scale,
+            offsetX: frame.xOffset,
+            offsetY: frame.yOffset
+          };
+        })),
       }))
     );
 
@@ -448,6 +484,7 @@ export function useProjectState() {
     setCheckerBrightness(project.backgroundRemoval.checkerBrightness);
     setCheckerNeutrality(project.backgroundRemoval.checkerNeutrality);
     setHaloThreshold(project.backgroundRemoval.haloThreshold);
+    setAssets(loadedAssets);
     setRows(loadedRows.length > 0 ? loadedRows : [{ id: createId(), name: "idle", frameRate: 6, frames: [], lockedCrop: null }]);
     setSelectedRowId(loadedRows[0]?.id ?? null);
     setSelectedFrameId(loadedRows[0]?.frames[0]?.id ?? null);
@@ -474,25 +511,7 @@ export function useProjectState() {
     }
   }
 
-  async function addFramesToRow(rowId: string, files: FileList | File[]) {
-    const newFrames = await Promise.all(Array.from(files).map(fileToSpriteFrame));
 
-    setRows((currentRows) =>
-      currentRows.map((row) =>
-        row.id === rowId
-          ? {
-              ...row,
-              frames: [...row.frames, ...newFrames],
-            }
-          : row
-      )
-    );
-
-    if (!selectedFrameId && newFrames[0]) {
-      setSelectedRowId(rowId);
-      setSelectedFrameId(newFrames[0].id);
-    }
-  }
 
   
   function stageSpritesheet(file: File) {
@@ -519,8 +538,7 @@ export function useProjectState() {
     framesToExtract: { r: number, c: number, startX: number, startY: number, endX: number, endY: number }[], 
     skipEmpty: boolean, 
     autoCenter: boolean, 
-    removeWhiteBg: boolean, 
-    targetRowId: string
+    removeWhiteBg: boolean
   ) {
     if (!spritesheetToSlice || framesToExtract.length === 0) return;
 
@@ -617,35 +635,12 @@ export function useProjectState() {
         });
       }
 
-    let finalTargetRowId = targetRowId;
-    if (targetRowId === "NEW") {
-      finalTargetRowId = createId();
-    }
-
-    setRows((current) => {
-      const updatedRows = [...current];
-      if (targetRowId === "NEW") {
-        updatedRows.push({
-          id: finalTargetRowId,
-          name: `anim_${current.length + 1}`,
-          frameRate: 8,
-          frames: [],
-          lockedCrop: null,
-        });
-      }
-      return updatedRows.map((row) => {
-        if (row.id === finalTargetRowId) {
-          return { ...row, frames: [...row.frames, ...newFrames] };
-        }
-        return row;
-      });
-    });
+    setAssets((current) => [...current, ...newFrames]);
 
     cancelSpritesheetSlice();
-    setSaveStatus(`Imported ${newFrames.length} sliced frames.`);
+    setSaveStatus(`Imported ${newFrames.length} sliced frames into the Asset Library.`);
     
     if (!selectedFrameId && newFrames[0]) {
-      setSelectedRowId(finalTargetRowId);
       setSelectedFrameId(newFrames[0].id);
     }
   }
@@ -705,7 +700,7 @@ export function useProjectState() {
     setImportCandidates((current) => current.map((candidate) => ({ ...candidate, selected })));
   }
 
-  async function importSelectedCandidates(rowId: string) {
+  async function importSelectedCandidates() {
     const selectedFiles = importCandidates
       .filter((candidate) => candidate.selected)
       .map((candidate) => candidate.file);
@@ -715,9 +710,30 @@ export function useProjectState() {
       return;
     }
 
-    await addFramesToRow(rowId, selectedFiles);
-    setSaveStatus(`Imported ${selectedFiles.length} image${selectedFiles.length === 1 ? "" : "s"} into the selected row.`);
+    const newFrames = await Promise.all(selectedFiles.map(fileToSpriteFrame));
+    setAssets((current) => [...current, ...newFrames]);
+    setSaveStatus(`Imported ${selectedFiles.length} image${selectedFiles.length === 1 ? "" : "s"} into the Asset Library.`);
     clearImportCandidates();
+  }
+
+  function addAssetToRow(assetId: string, rowId: string) {
+    const asset = assets.find((a) => a.id === assetId);
+    if (!asset) return;
+
+    const newFrame = { ...asset, id: createId() };
+    setRows((current) =>
+      current.map((row) =>
+        row.id === rowId ? { ...row, frames: [...row.frames, newFrame] } : row
+      )
+    );
+    if (!selectedFrameId) {
+      setSelectedFrameId(newFrame.id);
+    }
+  }
+
+  function deleteAsset(assetId: string) {
+    setAssets((current) => current.filter((a) => a.id !== assetId));
+    // Optionally remove instances of this asset from rows
   }
 
   function addRow() {
@@ -1230,6 +1246,16 @@ export function useProjectState() {
       context.drawImage(selectedFrame.originalCanvas, 0, 0);
     }
 
+    if (brushMode === "pencil") {
+      context.globalCompositeOperation = "source-over";
+      if (pickedColor) {
+        context.fillStyle = `rgb(${pickedColor[0]}, ${pickedColor[1]}, ${pickedColor[2]})`;
+      } else {
+        context.fillStyle = "black";
+      }
+      context.fill();
+    }
+
     context.restore();
     forceRerenderRows();
   }
@@ -1259,12 +1285,12 @@ export function useProjectState() {
   function handlePointerDown(event: React.PointerEvent) {
     event.currentTarget.setPointerCapture(event.pointerId);
 
-    if (brushMode === "pan" || event.button === 1 || event.altKey) {
+    if (brushMode === "pan" || event.button === 1 || event.altKey || spacePanRef.current) {
       beginPan(event);
       return;
     }
 
-    if (brushMode === "erase" || brushMode === "restore") {
+    if (brushMode === "erase" || brushMode === "restore" || brushMode === "pencil") {
       activePaintHistoryRef.current = selectedFrame
         ? { frameId: selectedFrame.id, beforeDataUrl: selectedFrame.editCanvas.toDataURL("image/png") }
         : null;
@@ -1403,6 +1429,7 @@ ${animationCode}`;
   const totalSheetHeight = frameSize * rows.length;
 
   return {
+    assets, setAssets,
     assetId, setAssetId, frameSize, handleFrameSizeChange, columns, setColumns, appMode, setAppMode,
     projectName, setProjectName, projectCreatedAt, lastSavedAt, saveStatus,
     settings, singlePng, updateSinglePng, applySinglePngPreset,
@@ -1421,7 +1448,7 @@ ${animationCode}`;
     showGuides, setShowGuides, previewTick, pointerPreview, setPointerPreview,
     editorScrollRef, editorCanvasRef, framePreviewCanvasRef, animationPreviewCanvasRef, rowAlignmentCanvasRef, sheetPreviewCanvasRef, singlePngPreviewCanvasRef,
     handleSaveProject, exportProjectJson, importProjectJson, createNewProject,
-    addRow, deleteRow, renameRow, updateRowFrameRate, deleteFrame, moveFrame,
+    addRow, deleteRow, renameRow, updateRowFrameRate, deleteFrame, moveFrame, addAssetToRow, deleteAsset,
     applyRemoveNearWhiteToSelected, applyRemoveNearWhiteToRow,
     applyPickedColorToSelected, applyPickedColorToRow,
     applyCheckerBgToSelected, applyCheckerBgToRow,
@@ -1485,7 +1512,42 @@ async function fileToSpriteFrame(file: File): Promise<SpriteFrame> {
     offsetY: 0,
   };
 }
-async function savedFrameToSpriteFrame(frame: AssetWorkbenchProject["spritesheet"]["rows"][number]["frames"][number]): Promise<SpriteFrame> {
+async function savedAssetToSpriteFrame(savedAsset: { id: string; name: string; imageDataUrl: string; cleanedImageDataUrl?: string }): Promise<SpriteFrame> {
+  const image = await loadImageFromDataUrl(savedAsset.imageDataUrl);
+
+  const originalCanvas = document.createElement("canvas");
+  originalCanvas.width = image.naturalWidth;
+  originalCanvas.height = image.naturalHeight;
+
+  const originalContext = originalCanvas.getContext("2d");
+  if (!originalContext) throw new Error("Could not create restored original canvas.");
+  originalContext.clearRect(0, 0, originalCanvas.width, originalCanvas.height);
+  originalContext.drawImage(image, 0, 0);
+
+  const cleanedImage = await loadImageFromDataUrl(savedAsset.cleanedImageDataUrl ?? savedAsset.imageDataUrl);
+  const editCanvas = document.createElement("canvas");
+  editCanvas.width = cleanedImage.naturalWidth;
+  editCanvas.height = cleanedImage.naturalHeight;
+
+  const editContext = editCanvas.getContext("2d");
+  if (!editContext) throw new Error("Could not create restored edit canvas.");
+  editContext.clearRect(0, 0, editCanvas.width, editCanvas.height);
+  editContext.drawImage(cleanedImage, 0, 0);
+
+  return {
+    id: savedAsset.id,
+    fileName: savedAsset.name,
+    image,
+    originalCanvas,
+    editCanvas,
+    scale: 1,
+    offsetX: 0,
+    offsetY: 0,
+  };
+}
+
+// Keep for backward compatibility
+async function savedFrameToSpriteFrame(frame: any): Promise<SpriteFrame> {
   const image = await loadImageFromDataUrl(frame.imageDataUrl);
 
   const originalCanvas = document.createElement("canvas");

@@ -24,7 +24,6 @@ export function ImportModal() {
   const activeCandidate = importCandidates.find((candidate) => candidate.id === activeImportId) ?? importCandidates[0] ?? null;
   const selectedCount = importCandidates.filter((candidate) => candidate.selected).length;
   const selectedRowName = selectedRow?.name ?? rows[0]?.name ?? "row";
-  const targetRowId = selectedRow?.id ?? rows[0]?.id;
 
   return (
     <div className="import-modal-overlay">
@@ -53,7 +52,7 @@ export function ImportModal() {
               <button type="button" onClick={() => setAllImportCandidates(true)}>All</button>
               <button type="button" onClick={() => setAllImportCandidates(false)}>None</button>
               <button type="button" onClick={clearImportCandidates}>Cancel</button>
-              <button type="button" className="primaryButton" onClick={() => importSelectedCandidates(targetRowId)} disabled={selectedCount === 0 || !targetRowId}>Import selected</button>
+              <button type="button" className="primaryButton" onClick={() => importSelectedCandidates()} disabled={selectedCount === 0}>Import selected</button>
             </div>
 
             <div className="importThumbGrid">

@@ -1,7 +1,7 @@
 
 import { useProject } from "../../store/ProjectContext";
 import { EDITOR_ZOOM_LEVELS } from "../../store/ProjectContext";
-import { Save, FolderOpen, Undo2, Redo2, MousePointer2, Eraser, Paintbrush, ZoomIn, ZoomOut, Download, FileUp, PlusSquare, Grid3X3 } from "lucide-react";
+import { Save, FolderOpen, Undo2, Redo2, MousePointer2, Eraser, Paintbrush, ZoomIn, ZoomOut, Download, FileUp, PlusSquare, Grid3X3, Pencil } from "lucide-react";
 
 export function TopMenu() {
   const {
@@ -18,6 +18,8 @@ export function TopMenu() {
     redoStack,
     brushMode,
     setBrushMode,
+    brushSize,
+    setBrushSize,
     stepEditorZoom,
     editorZoom,
     setEditorZoom,
@@ -84,8 +86,24 @@ export function TopMenu() {
         <span className="menuLabel">Edit</span>
         <button type="button" onClick={undo} disabled={undoStack.length === 0}><Undo2 size={16} /> Undo</button>
         <button type="button" onClick={redo} disabled={redoStack.length === 0}><Redo2 size={16} /> Redo</button>
+        <button type="button" className={brushMode === "pencil" ? "activeButton" : ""} onClick={() => setBrushMode("pencil")}><Pencil size={16} /> Pencil</button>
         <button type="button" className={brushMode === "erase" ? "activeButton" : ""} onClick={() => setBrushMode("erase")}><Eraser size={16} /> Erase</button>
         <button type="button" className={brushMode === "restore" ? "activeButton" : ""} onClick={() => setBrushMode("restore")}><Paintbrush size={16} /> Restore</button>
+        
+        {(brushMode === "erase" || brushMode === "restore" || brushMode === "pencil") && (
+          <label className="menuLabel" style={{ display: "flex", alignItems: "center", gap: "6px", marginLeft: "4px", marginRight: "4px", textTransform: "none" }}>
+            Size
+            <input 
+              type="number" 
+              min={1} 
+              max={200} 
+              value={brushSize} 
+              onChange={(e) => setBrushSize(Math.max(1, Number(e.target.value)))} 
+              style={{ width: "50px", padding: "2px 4px", fontSize: "12px", background: "var(--bg-dark)", color: "var(--text-main)", border: "1px solid var(--border-color)", borderRadius: "4px" }}
+            />
+          </label>
+        )}
+
         <button type="button" className={brushMode === "pick" ? "activeButton" : ""} onClick={() => setBrushMode("pick")}><MousePointer2 size={16} /> Pick</button>
         <button type="button" className={brushMode === "pan" ? "activeButton" : ""} onClick={() => setBrushMode("pan")}>Pan</button>
       </nav>

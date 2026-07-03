@@ -15,10 +15,40 @@ export function LeftSidebar() {
     updateRowFrameRate,
     deleteFrame,
     moveFrame,
+    assets,
+    deleteAsset,
+    addAssetToRow,
   } = useProject();
 
   return (
     <aside className="ide-sidebar ide-sidebar-left">
+      <div className="sidebar-header">
+        <h2>Asset Library</h2>
+      </div>
+      <div className="thumbRow" style={{ padding: "8px", flexWrap: "wrap", maxHeight: "30%", overflowY: "auto", borderBottom: "1px solid var(--border-color)" }}>
+        {assets.length === 0 ? (
+          <div className="empty" style={{ width: "100%", padding: "20px 0" }}>No assets. Import or slice images.</div>
+        ) : (
+          assets.map((asset, index) => (
+            <div
+              key={asset.id}
+              className="thumbCell"
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.setData("application/asset-id", asset.id);
+                e.dataTransfer.effectAllowed = "copy";
+              }}
+              style={{ cursor: "grab" }}
+            >
+              <img src={asset.editCanvas.toDataURL("image/png")} alt={`Asset ${index}`} />
+              <div className="thumbActions">
+                <button type="button" onClick={() => deleteAsset(asset.id)}><Trash2 size={12} /></button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
       <div className="sidebar-header">
         <h2>Animations</h2>
         <button type="button" onClick={addRow} title="Add Animation Row" className="icon-btn"><Plus size={16} /></button>
@@ -29,6 +59,19 @@ export function LeftSidebar() {
           <div
             key={row.id}
             className={`rowCard ${selectedRowId === row.id ? "activeRow" : ""}`}
+            onDragOver={(e) => {
+              if (e.dataTransfer.types.includes("application/asset-id")) {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "copy";
+              }
+            }}
+            onDrop={(e) => {
+              const assetId = e.dataTransfer.getData("application/asset-id");
+              if (assetId) {
+                e.preventDefault();
+                addAssetToRow(assetId, row.id);
+              }
+            }}
             onClick={() => {
               if (selectedRowId !== row.id) {
                 setSelectedRowId(row.id);

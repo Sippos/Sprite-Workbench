@@ -56,6 +56,13 @@ export type AssetWorkbenchProject = {
     collisionRadius: number;
     collisionOffsetY: number;
     showGuides: boolean;
+    assets: {
+      id: string;
+      name: string;
+      originalPath?: string;
+      imageDataUrl: string;
+      cleanedImageDataUrl?: string;
+    }[];
     rows: {
       id: string;
       name: string;
@@ -68,10 +75,7 @@ export type AssetWorkbenchProject = {
       } | null;
       frames: {
         id: string;
-        name: string;
-        originalPath?: string;
-        imageDataUrl: string;
-        cleanedImageDataUrl?: string;
+        assetId: string;
         xOffset: number;
         yOffset: number;
         scale: number;

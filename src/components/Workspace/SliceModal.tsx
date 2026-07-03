@@ -5,9 +5,7 @@ export function SliceModal() {
   const {
     spritesheetToSlice,
     cancelSpritesheetSlice,
-    sliceAndImportSpritesheet,
-    selectedRow,
-    rows
+    sliceAndImportSpritesheet
   } = useProject();
 
   const [cols, setCols] = useState(1);
@@ -22,12 +20,7 @@ export function SliceModal() {
   const [removeWhiteBg, setRemoveWhiteBg] = useState(true);
   const [importRow, setImportRow] = useState(0);
   const [importCol, setImportCol] = useState(0);
-  const [targetRowId, setTargetRowId] = useState<string | null>(null);
-
   const wrapperRef = useRef<HTMLDivElement>(null);
-
-  const defaultTarget = selectedRow?.id ?? (rows.length > 0 ? rows[0].id : "NEW");
-  const effectiveTargetRowId = targetRowId ?? defaultTarget;
 
   useEffect(() => {
     const lines = [];
@@ -113,8 +106,7 @@ export function SliceModal() {
       framesToExtract, 
       skipEmpty, 
       autoCenter, 
-      removeWhiteBg, 
-      effectiveTargetRowId
+      removeWhiteBg
     );
   };
 
@@ -293,15 +285,7 @@ export function SliceModal() {
             </div>
 
             <div className="sliceActions">
-              <label>
-                Target
-                <select value={effectiveTargetRowId} onChange={(e) => setTargetRowId(e.target.value)}>
-                  {rows.map(row => (
-                    <option key={row.id} value={row.id}>Row: {row.name}</option>
-                  ))}
-                  <option value="NEW">Create New Animation</option>
-                </select>
-              </label>
+
               <p>Total Frames: <strong>{cols * sliceRows - deselectedFrames.size}</strong></p>
               <button type="button" onClick={cancelSpritesheetSlice}>Cancel</button>
               <button 
