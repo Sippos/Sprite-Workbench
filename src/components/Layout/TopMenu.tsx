@@ -1,7 +1,6 @@
 
-import { useProject } from "../../store/ProjectContext";
-import { EDITOR_ZOOM_LEVELS } from "../../store/ProjectContext";
-import { Save, FolderOpen, Undo2, Redo2, MousePointer2, Eraser, Paintbrush, ZoomIn, ZoomOut, Download, FileUp, PlusSquare, Grid3X3, Pencil } from "lucide-react";
+import { useProject, colorToHex, hexToColor, EDITOR_ZOOM_LEVELS } from "../../store/ProjectContext";
+import { Save, FolderOpen, Undo2, Redo2, MousePointer2, Eraser, Paintbrush, ZoomIn, ZoomOut, Download, FileUp, PlusSquare, Grid3X3, Pencil, FlipHorizontal } from "lucide-react";
 
 export function TopMenu() {
   const {
@@ -29,7 +28,10 @@ export function TopMenu() {
     exportSheet,
     exportMeta,
     selectedFrame,
-    rows
+    rows,
+    pickedColor,
+    setPickedColor,
+    flipFrameHorizontal
   } = useProject();
 
   return (
@@ -86,6 +88,7 @@ export function TopMenu() {
         <span className="menuLabel">Edit</span>
         <button type="button" onClick={undo} disabled={undoStack.length === 0}><Undo2 size={16} /> Undo</button>
         <button type="button" onClick={redo} disabled={redoStack.length === 0}><Redo2 size={16} /> Redo</button>
+        <button type="button" onClick={flipFrameHorizontal} disabled={!selectedFrame} title="Flip Horizontal"><FlipHorizontal size={16} /></button>
         <button type="button" className={brushMode === "pencil" ? "activeButton" : ""} onClick={() => setBrushMode("pencil")}><Pencil size={16} /> Pencil</button>
         <button type="button" className={brushMode === "erase" ? "activeButton" : ""} onClick={() => setBrushMode("erase")}><Eraser size={16} /> Erase</button>
         <button type="button" className={brushMode === "restore" ? "activeButton" : ""} onClick={() => setBrushMode("restore")}><Paintbrush size={16} /> Restore</button>
@@ -105,6 +108,13 @@ export function TopMenu() {
         )}
 
         <button type="button" className={brushMode === "pick" ? "activeButton" : ""} onClick={() => setBrushMode("pick")}><MousePointer2 size={16} /> Pick</button>
+        <input 
+          type="color" 
+          value={colorToHex(pickedColor) ?? "#000000"} 
+          onChange={(e) => setPickedColor(hexToColor(e.target.value))}
+          style={{ width: "24px", height: "24px", padding: "0", border: "none", cursor: "pointer", background: "none", alignSelf: "center", marginLeft: "4px" }}
+          title="Active Color"
+        />
         <button type="button" className={brushMode === "pan" ? "activeButton" : ""} onClick={() => setBrushMode("pan")}>Pan</button>
       </nav>
 

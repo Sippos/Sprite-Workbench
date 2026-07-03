@@ -784,6 +784,49 @@ export function useProjectState() {
     }
   }
 
+  function flipFrameHorizontal() {
+    if (!selectedFrame) return;
+
+    const editBefore = selectedFrame.editCanvas.toDataURL();
+
+    const tempCanvas = document.createElement("canvas");
+    tempCanvas.width = selectedFrame.editCanvas.width;
+    tempCanvas.height = selectedFrame.editCanvas.height;
+    const tempCtx = tempCanvas.getContext("2d");
+    if (!tempCtx) return;
+
+    tempCtx.drawImage(selectedFrame.editCanvas, 0, 0);
+    const editCtx = selectedFrame.editCanvas.getContext("2d");
+    if (editCtx) {
+      editCtx.clearRect(0, 0, selectedFrame.editCanvas.width, selectedFrame.editCanvas.height);
+      editCtx.save();
+      editCtx.scale(-1, 1);
+      editCtx.translate(-selectedFrame.editCanvas.width, 0);
+      editCtx.drawImage(tempCanvas, 0, 0);
+      editCtx.restore();
+    }
+
+    tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
+    tempCtx.drawImage(selectedFrame.originalCanvas, 0, 0);
+    const origCtx = selectedFrame.originalCanvas.getContext("2d");
+    if (origCtx) {
+      origCtx.clearRect(0, 0, selectedFrame.originalCanvas.width, selectedFrame.originalCanvas.height);
+      origCtx.save();
+      origCtx.scale(-1, 1);
+      origCtx.translate(-selectedFrame.originalCanvas.width, 0);
+      origCtx.drawImage(tempCanvas, 0, 0);
+      origCtx.restore();
+    }
+
+    pushHistory("Flip Horizontal", [{
+      frameId: selectedFrame.id,
+      beforeDataUrl: editBefore,
+      afterDataUrl: selectedFrame.editCanvas.toDataURL(),
+    }]);
+
+    setPreviewTick((t) => t + 1);
+  }
+
   function moveFrame(rowId: string, frameId: string, direction: -1 | 1) {
     setRows((current) =>
       current.map((row) => {
@@ -1448,7 +1491,7 @@ ${animationCode}`;
     showGuides, setShowGuides, previewTick, pointerPreview, setPointerPreview,
     editorScrollRef, editorCanvasRef, framePreviewCanvasRef, animationPreviewCanvasRef, rowAlignmentCanvasRef, sheetPreviewCanvasRef, singlePngPreviewCanvasRef,
     handleSaveProject, exportProjectJson, importProjectJson, createNewProject,
-    addRow, deleteRow, renameRow, updateRowFrameRate, deleteFrame, moveFrame, addAssetToRow, deleteAsset,
+    addRow, deleteRow, renameRow, updateRowFrameRate, deleteFrame, moveFrame, addAssetToRow, deleteAsset, flipFrameHorizontal,
     applyRemoveNearWhiteToSelected, applyRemoveNearWhiteToRow,
     applyPickedColorToSelected, applyPickedColorToRow,
     applyCheckerBgToSelected, applyCheckerBgToRow,
