@@ -616,7 +616,6 @@ export function useProjectState() {
           offsetY: 0,
         });
       }
-    }
 
     let finalTargetRowId = targetRowId;
     if (targetRowId === "NEW") {
