@@ -515,89 +515,100 @@ export function useProjectState() {
     }
   }
 
-  async function sliceAndImportSpritesheet(cols: number, sliceRows: number, skipEmpty: boolean, autoCenter: boolean, removeWhiteBg: boolean, targetRowId: string, importRow: number, importCol: number) {
-    if (!spritesheetToSlice || cols < 1 || sliceRows < 1) return;
+  async function sliceAndImportSpritesheet(
+    framesToExtract: { r: number, c: number, startX: number, startY: number, endX: number, endY: number }[], 
+    skipEmpty: boolean, 
+    autoCenter: boolean, 
+    removeWhiteBg: boolean, 
+    targetRowId: string
+  ) {
+    if (!spritesheetToSlice || framesToExtract.length === 0) return;
 
     const image = await loadImage(spritesheetToSlice.file);
-    const frameWidth = image.naturalWidth / cols;
-    const frameHeight = image.naturalHeight / sliceRows;
+    const imgW = image.naturalWidth;
+    const imgH = image.naturalHeight;
 
     const newFrames: SpriteFrame[] = [];
 
-    for (let r = 0; r < sliceRows; r++) {
-      if (importRow > 0 && r !== importRow - 1) continue;
+    for (const frame of framesToExtract) {
+      const pxStartX = Math.floor(frame.startX * imgW);
+      const pxEndX = Math.floor(frame.endX * imgW);
+      const pxStartY = Math.floor(frame.startY * imgH);
+      const pxEndY = Math.floor(frame.endY * imgH);
+      
+      const frameWidth = pxEndX - pxStartX;
+      const frameHeight = pxEndY - pxStartY;
 
-      for (let c = 0; c < cols; c++) {
-        if (importCol > 0 && c !== importCol - 1) continue;
+      if (frameWidth <= 0 || frameHeight <= 0) continue;
 
-        const originalCanvas = document.createElement("canvas");
-        originalCanvas.width = frameWidth;
-        originalCanvas.height = frameHeight;
-        const originalContext = originalCanvas.getContext("2d");
-        if (!originalContext) continue;
+      const originalCanvas = document.createElement("canvas");
+      originalCanvas.width = frameWidth;
+      originalCanvas.height = frameHeight;
+      const originalContext = originalCanvas.getContext("2d");
+      if (!originalContext) continue;
 
-        originalContext.drawImage(
-          image,
-          c * frameWidth, r * frameHeight, frameWidth, frameHeight,
-          0, 0, frameWidth, frameHeight
-        );
+      originalContext.drawImage(
+        image,
+        pxStartX, pxStartY, frameWidth, frameHeight,
+        0, 0, frameWidth, frameHeight
+      );
 
-        if (removeWhiteBg) {
-          removeNearWhite(originalCanvas, 246);
-        }
+      if (removeWhiteBg) {
+        removeNearWhite(originalCanvas, 246);
+      }
 
-        let minX = frameWidth, minY = frameHeight, maxX = 0, maxY = 0;
-        const imgData = originalContext.getImageData(0, 0, frameWidth, frameHeight).data;
-        let isEmpty = true;
-        
-        for (let y = 0; y < frameHeight; y++) {
-          for (let x = 0; x < frameWidth; x++) {
-            const i = (y * frameWidth + x) * 4;
-            if (imgData[i + 3] > 0) {
-              isEmpty = false;
-              if (x < minX) minX = x;
-              if (x > maxX) maxX = x;
-              if (y < minY) minY = y;
-              if (y > maxY) maxY = y;
-            }
+      let minX = frameWidth, minY = frameHeight, maxX = 0, maxY = 0;
+      const imgData = originalContext.getImageData(0, 0, frameWidth, frameHeight).data;
+      let isEmpty = true;
+      
+      for (let y = 0; y < frameHeight; y++) {
+        for (let x = 0; x < frameWidth; x++) {
+          const i = (y * frameWidth + x) * 4;
+          if (imgData[i + 3] > 0) {
+            isEmpty = false;
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
           }
         }
+      }
 
-        if (skipEmpty && isEmpty) continue;
+      if (skipEmpty && isEmpty) continue;
 
-        const editCanvas = document.createElement("canvas");
-        editCanvas.width = frameWidth;
-        editCanvas.height = frameHeight;
-        const editContext = editCanvas.getContext("2d");
-        if (!editContext) continue;
+      const editCanvas = document.createElement("canvas");
+      editCanvas.width = frameWidth;
+      editCanvas.height = frameHeight;
+      const editContext = editCanvas.getContext("2d");
+      if (!editContext) continue;
 
-        if (autoCenter && !isEmpty) {
-          const contentWidth = maxX - minX + 1;
-          const contentHeight = Math.max(1, maxY - minY + 1);
-          const targetX = Math.floor((frameWidth - contentWidth) / 2);
-          const targetY = Math.floor((frameHeight - contentHeight) / 2);
-          
-          const centeredCanvas = document.createElement("canvas");
-          centeredCanvas.width = frameWidth;
-          centeredCanvas.height = frameHeight;
-          const centeredContext = centeredCanvas.getContext("2d");
-          if (centeredContext) {
-            centeredContext.drawImage(
-              originalCanvas,
-              minX, minY, contentWidth, contentHeight,
-              targetX, targetY, contentWidth, contentHeight
-            );
-            originalContext.clearRect(0, 0, frameWidth, frameHeight);
-            originalContext.drawImage(centeredCanvas, 0, 0);
-          }
-        }
+      if (autoCenter && !isEmpty) {
+        const contentWidth = maxX - minX + 1;
+        const contentHeight = Math.max(1, maxY - minY + 1);
+        const targetX = Math.floor((frameWidth - contentWidth) / 2);
+        const targetY = Math.floor((frameHeight - contentHeight) / 2);
         
-        editContext.drawImage(originalCanvas, 0, 0);
+        const centeredCanvas = document.createElement("canvas");
+        centeredCanvas.width = frameWidth;
+        centeredCanvas.height = frameHeight;
+        const centeredContext = centeredCanvas.getContext("2d");
+        if (centeredContext) {
+          centeredContext.drawImage(
+            originalCanvas,
+            minX, minY, contentWidth, contentHeight,
+            targetX, targetY, contentWidth, contentHeight
+          );
+          originalContext.clearRect(0, 0, frameWidth, frameHeight);
+          originalContext.drawImage(centeredCanvas, 0, 0);
+        }
+      }
+      
+      editContext.drawImage(originalCanvas, 0, 0);
 
-        newFrames.push({
-          id: createId(),
-          fileName: `${spritesheetToSlice.file.name.replace(/\.[^.]+$/, "")}_${r}_${c}`,
-          image,
+      newFrames.push({
+        id: createId(),
+        fileName: `${spritesheetToSlice.file.name.replace(/\.[^.]+$/, "")}_${frame.r}_${frame.c}`,
+        image,
           originalCanvas,
           editCanvas,
           scale: 1,
